@@ -123,7 +123,7 @@
             <button class="btn small danger" id="clearTok" type="button">清除</button>
           </div>
         </div>
-        <p class="hint">Token 只保存在这台设备的浏览器本地（localStorage），不上传、不共享、不会写进页面代码。换电脑或换浏览器需要重新填一次。没有 Token 时可以先看下面的示例报告。</p>
+        <p class="hint">Token 只保存在这台设备的浏览器本地（localStorage），不上传、不共享、不会写进页面代码。换电脑或换浏览器需要重新填一次。填入你自己的 Token 后即可开始分析。</p>
         <p class="tokstatus" id="tokStatus" role="status"></p>
       </section>
 
@@ -132,7 +132,7 @@
         <div class="row">
           <div style="flex:2 1 200px">
             <label for="asin">ASIN</label>
-            <input type="text" id="asin" class="mono" placeholder="如 B0GXHZZGY5" maxlength="10" autocomplete="off" />
+            <input type="text" id="asin" class="mono" placeholder="输入 10 位 ASIN" maxlength="10" autocomplete="off" />
           </div>
           <div>
             <label for="site">站点</label>
@@ -167,7 +167,11 @@
       <section id="reportZone"></section>
 
       <section class="card" aria-labelledby="hist-h">
-        <h2 id="hist-h">分析历史</h2>
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+          <h2 id="hist-h" style="margin:0">分析历史</h2>
+          <button class="btn small danger" id="clearHist" type="button">清空全部记录</button>
+        </div>
+        <p class="hint" style="margin:0 0 10px">历史保存在这台设备的浏览器本地，刷新或关掉再打开都会保留。换设备、换浏览器或清除浏览器数据后会消失；点「清空全部记录」会同时删掉本机保存的数据。</p>
         <div class="hist" id="hist"></div>
       </section>
 
@@ -177,14 +181,41 @@
     "use strict";
     var MCP_URL = "https://mcp.xydc.com/mcp";
     var LS_KEY = "xydc_mcp_token";
+    var LS_REPORTS_KEY = "asin_analysis_reports_v1";
+    var LS_CURRENT_KEY = "asin_analysis_current_v1";
     var $ = function(id){ return document.getElementById(id); };
-    var reports = [];   // 本次打开期间的报告（含预置示例）
+    var reports = [];   // 从本机 localStorage 恢复的历史报告
     var currentId = null;
 
     /* ---------- Token 本机保存 ---------- */
     function loadToken(){ try { return localStorage.getItem(LS_KEY) || ""; } catch(e){ return ""; } }
     function storeToken(t){ try { if(t) localStorage.setItem(LS_KEY, t); else localStorage.removeItem(LS_KEY); } catch(e){} }
     function getToken(){ return ($("token").value || "").trim() || loadToken(); }
+
+    /* ---------- 历史报告本机保存（localStorage，刷新保留） ---------- */
+    function loadReports(){
+      try {
+        var raw = localStorage.getItem(LS_REPORTS_KEY);
+        if (!raw) return [];
+        var arr = JSON.parse(raw);
+        if (!Array.isArray(arr)) return [];
+        return arr.filter(function(r){ return r && r.id && r.asin; });
+      } catch(e){ return []; }
+    }
+    function loadCurrentId(){
+      try { return localStorage.getItem(LS_CURRENT_KEY) || null; } catch(e){ return null; }
+    }
+    function saveReports(){
+      try {
+        if (reports.length) localStorage.setItem(LS_REPORTS_KEY, JSON.stringify(reports));
+        else localStorage.removeItem(LS_REPORTS_KEY);
+        if (currentId) localStorage.setItem(LS_CURRENT_KEY, currentId);
+        else localStorage.removeItem(LS_CURRENT_KEY);
+      } catch(e){ /* 存储空间不足或浏览器禁用时不阻断使用，仅本次会话保留 */ }
+    }
+    function clearSavedReports(){
+      try { localStorage.removeItem(LS_REPORTS_KEY); localStorage.removeItem(LS_CURRENT_KEY); } catch(e){}
+    }
 
     /* ---------- MCP 客户端（浏览器直连，Streamable HTTP + JSON-RPC） ---------- */
     function McpError(kind, msg){ this.kind = kind; this.message = msg; }
@@ -314,7 +345,7 @@
       var asin = ($("asin").value || "").trim().toUpperCase();
       var country = $("site").value;
       var token = getToken();
-      if (!/^[A-Z0-9]{10}$/.test(asin)){ showBanner("<b>ASIN 格式不对：</b>应为 10 位字母数字，如 B0GXHZZGY5。"); return; }
+      if (!/^[A-Z0-9]{10}$/.test(asin)){ showBanner("<b>ASIN 格式不对：</b>应为 10 位字母数字。"); return; }
       if (!token){ showBanner("<b>还没有 Token：</b>先在上面填入你的西柚洞察 MCP Token 并保存，再开始分析。没有 Token 时页面连不上西柚，不会出数据。"); return; }
       var btn = $("go"); btn.disabled = true; btn.textContent = "分析中…";
       $("steps").classList.remove("hidden");
@@ -365,8 +396,9 @@
           setStep("kwasin","done");
         } else { setStep("kwinfo","done"); setStep("kwasin","done"); }
 
-        var report = normalize(asin, country, infoE, trE, kwList, kwR.data || {}, mainKw, kwInfo, competitors, trends, quota, false);
+        var report = normalize(asin, country, infoE, trE, kwList, kwR.data || {}, mainKw, kwInfo, competitors, trends, quota);
         reports.unshift(report); currentId = report.id;
+        saveReports();
         renderHistory(); renderReport(report);
         window.scrollTo({ top: $("reportZone").offsetTop - 10, behavior:"smooth" });
       } catch(e){
@@ -380,12 +412,12 @@
 
     /* ---------- 数据归一化 ---------- */
     function rankOf(item, pos){ var rs = item.ranks || []; for (var i=0;i<rs.length;i++){ if (rs[i].position === pos) return rs[i].totalRank || null; } return null; }
-    function normalize(asin, country, info, tr, kwList, kwData, mainKw, kwInfo, competitors, trends, quota, isExample){
+    function normalize(asin, country, info, tr, kwList, kwData, mainKw, kwInfo, competitors, trends, quota){
       var kwCounts = kwData.searchTermCount || [];
       var orgCount = null, adCount = null;
       kwCounts.forEach(function(c){ if (c.type === "organic") orgCount = c.count; if (c.type === "advertising") adCount = c.count; });
       var r = {
-        id: "r" + Date.now() + Math.floor(Math.random()*999), example: !!isExample,
+        id: "r" + Date.now() + Math.floor(Math.random()*999),
         asin: asin, country: country, fetchedAt: new Date().toLocaleString("zh-CN"),
         info: {
           title: info.title || "", brand: info.brand || "", price: num(info.price), currency: info.currency || "",
@@ -570,7 +602,7 @@
       '<section class="card">' +
         '<div class="verdict"><div class="gauge"><div class="num">' + s.total + '</div><div class="of">上架确定性 · 满分 100</div></div>' +
         '<div><span class="vtag ' + s.verdict.cls + '">' + s.verdict.t + '</span><p class="vdesc">' + verdictDesc(s.verdict) + "</p>" +
-        '<p class="meta">' + esc(r.asin) + " · " + esc(r.country) + " 站 · " + (r.example ? "示例报告，西柚数据拉取于 2026-11-20" : "拉取于 " + esc(r.fetchedAt)) +
+        '<p class="meta">' + esc(r.asin) + " · " + esc(r.country) + " 站 · 拉取于 " + esc(r.fetchedAt) +
         (r.quota ? " · 账户本月剩余 " + fmt(r.quota.monthlyRemain) + " Credit" : "") + "</p></div></div>" +
         '<div class="dims">' + dimHtml + "</div>" +
         "<details><summary>看每个维度的打分依据</summary>" + scoreDetail + "</details>" +
@@ -625,65 +657,47 @@
 
     function renderHistory(){
       var h = $("hist");
-      if (!reports.length){ h.innerHTML = '<p class="meta">还没有报告。</p>'; return; }
+      var cb = $("clearHist"); if (cb) cb.disabled = !reports.length;
+      if (!reports.length){ h.innerHTML = '<p class="meta">还没有分析记录。在上方输入 ASIN 开始分析，报告会显示在这里，并自动保存在本机浏览器里，刷新后仍可查看。</p>'; return; }
       h.innerHTML = reports.map(function(r){
         var s = scoreReport(r);
         return '<div class="hrow"><div class="grow"><b style="font-family:var(--mono)">' + esc(r.asin) + "</b> · " + esc(r.country) + " 站" +
-          (r.example ? ' <span class="pill ex">示例</span>' : "") + '<div class="meta">' + esc(r.info.title || "") + " · " + (r.example ? "2026-11-20" : esc(r.fetchedAt)) + "</div></div>" +
+          '<div class="meta">' + esc(r.info.title || "") + " · " + esc(r.fetchedAt) + "</div></div>" +
           '<span class="score">' + s.total + '</span><span class="pill ' + s.verdict.cls + '">' + s.verdict.t + "</span>" +
           '<button class="btn small ghost" data-view="' + r.id + '" type="button">查看</button>' +
           '<button class="btn small danger" data-del="' + r.id + '" type="button">删除</button></div>';
       }).join("");
       h.querySelectorAll("[data-view]").forEach(function(b){ b.addEventListener("click", function(){
         var r = reports.filter(function(x){ return x.id === b.getAttribute("data-view"); })[0];
-        if (r){ currentId = r.id; renderReport(r); window.scrollTo({ top: $("reportZone").offsetTop - 10, behavior:"smooth" }); }
+        if (r){ currentId = r.id; saveReports(); renderReport(r); window.scrollTo({ top: $("reportZone").offsetTop - 10, behavior:"smooth" }); }
       }); });
       h.querySelectorAll("[data-del]").forEach(function(b){ b.addEventListener("click", function(){
         var id = b.getAttribute("data-del");
         reports = reports.filter(function(x){ return x.id !== id; });
         if (currentId === id){ currentId = reports.length ? reports[0].id : null; if (reports.length) renderReport(reports[0]); else $("reportZone").innerHTML = ""; }
+        saveReports();
         renderHistory();
       }); });
     }
 
-    /* ---------- 示例报告：B0GXHZZGY5 意大利站，2026-11-20 经西柚洞察实拉 ---------- */
-    var example = {
-      id:"example-1", example:true, asin:"B0GXHZZGY5", country:"IT", fetchedAt:"2026-11-20",
-      info:{ title:"90W Caricatore Universale Portatil 20V Max per Laptop (Senza USB-C)", brand:"GALECHE", price:18.9, currency:"EUR",
-        stars:4.4, ratings:55, fbaFee:3.66, referralRatio:0.15, fulfillment:"FBA", category:"笔记本电脑充电器与电源适配器",
-        streetDate:"2026-06-30", url:"https://www.amazon.it/dp/B0GXHZZGY5" },
-      traffic:{ total:2079, organic:1798, ad:281, organicRatio:0.8648, growth:-0.1161, prevTotal:2352, organicTerms:58, adTerms:8 },
-      keywords:[
-        {kw:"alimentatore universale", zh:"通用电源适配器", traffic:259, or:6, sp:null},
-        {kw:"alimentatore universale notebook", zh:"通用笔记本电脑电源适配器", traffic:230, or:1, sp:2},
-        {kw:"caricatore pc", zh:"电脑充电器", traffic:156, or:5, sp:12},
-        {kw:"caricatore lenovo pc portatile", zh:"联想笔记本电脑充电器", traffic:138, or:44, sp:20},
-        {kw:"caricatore universale", zh:"通用充电器", traffic:126, or:10, sp:null},
-        {kw:"alimentatore pc", zh:"电脑电源", traffic:112, or:97, sp:null},
-        {kw:"caricatore portatile", zh:"便携式充电器", traffic:108, or:137, sp:null},
-        {kw:"caricatore pc hp portatile", zh:"惠普笔记本电脑充电器", traffic:104, or:23, sp:null},
-        {kw:"caricabatterie lenovo pc portatile", zh:"联想笔记本电脑充电器", traffic:86, or:32, sp:21},
-        {kw:"caricabatterie universale", zh:"通用充电器", traffic:68, or:12, sp:null}
-      ],
-      kwTotal:59,
-      mainKw:{ term:"alimentatore universale notebook", zh:"通用笔记本电脑电源适配器", volume:124, difficulty:57, tier:"easy",
-        cpc:1.68, clickShare:0.227, convShare:0.5, orRank:1, traffic:230 },
-      competitors:[
-        {asin:"B0F387KD4B", price:25.99, stars:4.4, ratings:2759, sales:300, traffic:255, or:7, self:false},
-        {asin:"B0DQ75MB9L", price:19.99, stars:4.6, ratings:118, sales:50, traffic:234, or:9, self:false},
-        {asin:"B0GXHZZGY5", price:18.9, stars:4.4, ratings:55, sales:200, traffic:230, or:1, self:true},
-        {asin:"B007HXN064", price:29.99, stars:4.4, ratings:11029, sales:100, traffic:187, or:6, self:false},
-        {asin:"B0BY27YDRL", price:21.99, stars:4.3, ratings:2557, sales:0, traffic:163, or:23, self:false},
-        {asin:"B0H4LJ6ND8", price:17.7, stars:4.2, ratings:19, sales:100, traffic:134, or:14, self:false},
-        {asin:"B08KW98B32", price:22.9, stars:4.5, ratings:160, sales:100, traffic:120, or:4, self:false},
-        {asin:"B089XB3LRJ", price:23.9, stars:4.0, ratings:128, sales:0, traffic:111, or:21, self:false}
-      ],
-      orders:[{date:"2026-05",orders:0},{date:"2026-06",orders:0},{date:"2026-07",orders:0},{date:"2026-08",orders:0},{date:"2026-09",orders:100},{date:"2026-10",orders:100}],
-      quota:null
-    };
-    reports.push(example); currentId = example.id;
+    /* ---------- 清空全部记录（同时清除本机保存） ---------- */
+    $("clearHist").addEventListener("click", function(){
+      reports = []; currentId = null; $("reportZone").innerHTML = ""; clearSavedReports(); renderHistory();
+    });
+
+    /* ---------- 初始化：恢复本机保存的 Token 与历史报告 ---------- */
     var saved = loadToken(); if (saved) $("token").value = saved;
-    renderHistory(); renderReport(example);
+    reports = loadReports();
+    currentId = loadCurrentId();
+    if (reports.length){
+      var cur = reports.filter(function(x){ return x.id === currentId; })[0] || reports[0];
+      currentId = cur.id;
+      renderHistory();
+      renderReport(cur);
+    } else {
+      currentId = null;
+      renderHistory();
+    }
     </script>
   </body>
 </html>
