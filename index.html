@@ -110,7 +110,7 @@
   <body>
     <main class="wrap">
       <h1>单 ASIN 市场分析</h1>
-      <p class="lede">填入你自己的西柚洞察 MCP Token，输入一个 ASIN 和站点，页面连西柚洞察拉产品、流量、关键词、竞品和订单数据，按 100 分制算出「能不能尝试上架」的确定性。西柚接口未开放浏览器跨域时直连会被拦，此时需改走你自己的中转地址（见下方连接方式），Token 只发给西柚或你自己的中转，不经过任何公共代理。</p>
+      <p class="lede">填入你自己的西柚洞察 MCP Token，输入一个 ASIN 和站点，页面经你自己的 Supabase 中转连西柚洞察拉产品、流量、关键词、竞品和订单数据，按 100 分制算出「能不能尝试上架」的确定性。走 Supabase 时要用下方新版双头方式：Supabase 的 key 只用来过它的 JWT 网关，西柚 Token 走单独的头转发，两者不冲突。</p>
 
       <section class="card" aria-labelledby="tok-h">
         <h2 id="tok-h">1 · 西柚洞察 MCP Token</h2>
@@ -127,14 +127,26 @@
         <p class="tokstatus" id="tokStatus" role="status"></p>
         <div style="border-top:1px dashed var(--line);margin-top:14px;padding-top:14px">
           <h3 style="font-size:14px">连接方式（连不上时先看这里）</h3>
-          <p class="hint" style="margin:0 0 10px">西柚接口 <span style="font-family:var(--mono)">mcp.xydc.com</span> 没有开放浏览器跨域，网页直连会被浏览器拦下，表现就是「连不上西柚洞察接口」。这不是 Token 错，也不是你网络坏了。解决办法是走你自己的中转：用你自己的 Supabase Edge Function 或 Cloudflare Worker 转发请求，Token 只发给西柚和你自己的中转，不经过任何第三方公共代理。选「自动」时先试直连，不通再试你已填的中转地址。</p>
+          <p class="hint" style="margin:0 0 10px">西柚接口 <span style="font-family:var(--mono)">mcp.xydc.com</span> 没有开放浏览器跨域，网页直连会被浏览器拦下。解决办法是走你自己的 Supabase 中转：由 Edge Function 在服务器端转发到西柚，浏览器就不拦了。Token 只发给西柚和你自己的中转，不经过任何第三方公共代理。</p>
+          <div style="background:var(--bad-bg);border:1px solid var(--bad);border-radius:8px;padding:10px 12px;font-size:13.5px;margin:0 0 12px">
+            <b style="color:var(--bad)">换了新 Token 还是 401？多半不是 Token 的问题，是 Supabase 的 JWT 验证在拦。</b><br>
+            Supabase Edge Function 默认开着 Verify JWT：它会先检查请求头 <span style="font-family:var(--mono)">Authorization</span> 是不是 <b>Supabase 自己的</b> JWT。网页原本把西柚 Token 放在这个头里发过去，Supabase 就把它当成自己的 key 来验，验不过直接返回 401——请求根本没到函数、更没到西柚，所以换多少个新西柚 Token 都一样报 401。<br>
+            <b>本页已改成双头转发（见下方新版函数代码）：</b><span style="font-family:var(--mono)">Authorization</span> 放 Supabase 的 Publishable / Anon Key 用来过网关，西柚 Token 改放 <span style="font-family:var(--mono)">X-Xydc-Authorization</span> 单独传，函数再把它还原成西柚需要的头转发。这样不用关 Verify JWT 也能通。只改网页或只改函数都不行，<b>两边都要换成新版</b>：① 函数代码换成下方新版并重新 Deploy；② 在下方填入你的 Supabase Publishable Key。
+          </div>
+          <div style="background:var(--surface2);border-radius:8px;padding:10px 12px;font-size:13px;margin:0 0 12px">
+            <b>两种 401 怎么分（诊断和报错会自动帮你分）：</b>
+            <ul style="margin:6px 0 0;padding-left:18px">
+              <li style="margin-bottom:4px"><b>Supabase 拦的 401：</b>返回里带 <span style="font-family:var(--mono)">UNAUTHORIZED_NO_AUTH_HEADER</span> / <span style="font-family:var(--mono)">Invalid JWT</span> / <span style="font-family:var(--mono)">Missing authorization header</span> 这类字样。意思是西柚没收到请求，按上面双头方案处理，或关掉 Verify JWT 后重新部署。</li>
+              <li><b>西柚返回的 401：</b>请求已经过了 Supabase、到了西柚，是西柚不认这个 Token。这时才需要去 platform.xydc.com 凭证管理重新复制 MCP Token。</li>
+            </ul>
+          </div>
           <div class="row">
             <div>
               <label for="connMode">连接通道</label>
               <select id="connMode">
-                <option value="auto">自动（先直连，不通走我的中转）</option>
+                <option value="auto">自动（已填中转时先走中转，不通再试直连）</option>
                 <option value="direct">只直连西柚</option>
-                <option value="custom">只走我自己的中转地址</option>
+                <option value="custom">只走我自己的中转地址（Supabase 选这项）</option>
               </select>
             </div>
             <div style="flex:0 0 auto;display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap">
@@ -145,24 +157,52 @@
             <label for="customProxy">我的中转地址（你自己的 Supabase Edge Function / Cloudflare Worker 转发地址）</label>
             <input type="text" id="customProxy" class="mono" placeholder="例如 https://你的项目.supabase.co/functions/v1/xydc-proxy" autocomplete="off" />
             <p class="hint">填你自己部署的中转完整地址，页面会直接向这个地址发 MCP 请求，由它转发到西柚。地址里可写 <span style="font-family:var(--mono)">{url}</span> 作为西柚地址占位符；不写占位符就按完整中转地址直接请求。只保存在本机浏览器。还没部署中转时先留空，并按下方说明部署一个。</p>
+            <div style="margin-top:12px">
+              <label for="sbKey">Supabase Publishable / Anon Key（走 Supabase 中转时必填，Cloudflare 中转不用填）</label>
+              <input type="text" id="sbKey" class="mono" placeholder="粘贴 sb_publishable_… 或 eyJ… 开头的 Supabase key" autocomplete="off" />
+              <p class="hint">在 Supabase 项目里找：<b>Project Settings → API Keys</b>，复制 <b>Publishable key</b>（<span style="font-family:var(--mono)">sb_publishable_…</span> 开头，旧项目叫 anon key、<span style="font-family:var(--mono)">eyJ…</span> 开头），就是你部署后示例 curl 里 <span style="font-family:var(--mono)">Authorization: Bearer</span> 后面那一串。<b>不要</b>填 <span style="font-family:var(--mono)">sb_secret_…</span> / service_role key。这个 key 本来就是公开用的，填进来只为了过 Supabase 网关的 JWT 检查；填了之后西柚 Token 会改走 <span style="font-family:var(--mono)">X-Xydc-Authorization</span> 头，不再和它冲突。只保存在本机浏览器，不会写进下载的 HTML。如果你已经用 <span style="font-family:var(--mono)">--no-verify-jwt</span> 关掉了 Verify JWT 并重新部署，这栏可以留空。</p>
+            </div>
           </div>
           <p class="hint" style="margin-top:8px">为什么不用公共代理：公共代理会经手你的 Token，等于把西柚账号凭证交给陌生服务器，不能用。本页只保留两条路：直连西柚，或走你自己的中转。诊断会逐条试当前通道并告诉你哪条通、哪条不通。</p>
           <details>
-            <summary>怎么部署我自己的中转（Supabase，约 5 分钟）</summary>
+            <summary>怎么部署 / 更新 Supabase 中转（新版双头代码，约 5 分钟）</summary>
+            <p style="font-size:13.5px;margin:8px 0"><b>已经部署过旧版函数的，必须更新：</b>旧版函数只读 <span style="font-family:var(--mono)">Authorization</span> 头，新版页面把西柚 Token 放在 <span style="font-family:var(--mono)">X-Xydc-Authorization</span> 里，旧函数读不到就会继续 401。把函数代码整段换成下面新版，重新 Deploy，再回本页填 Publishable Key 后点诊断。</p>
             <ol style="margin:6px 0;padding-left:20px;font-size:13.5px">
-              <li style="margin-bottom:5px">打开 supabase.com 建一个免费项目，进 <b>Edge Functions</b>，新建函数，名字填 <span style="font-family:var(--mono)">xydc-proxy</span>。</li>
-              <li style="margin-bottom:5px">把函数代码换成下面这段并 Deploy。这段代码只做一件事：把页面发来的请求原样转发到西柚，并补上跨域头；Token 由页面带入，代码里不写任何 Token。</li>
+              <li style="margin-bottom:5px">打开 supabase.com 进你的项目（例如 <span style="font-family:var(--mono)">asin-analysis</span>），左边点 <b>Edge Functions</b>，打开已有的 <span style="font-family:var(--mono)">xydc-proxy</span>（没有就新建，名字填 <span style="font-family:var(--mono)">xydc-proxy</span>，入口文件必须是 <span style="font-family:var(--mono)">index.ts</span>）。</li>
+              <li style="margin-bottom:5px">把代码整段换成下面这段，点 <b>Deploy</b>。代码里不写任何 Token 或 key：西柚 Token 从 <span style="font-family:var(--mono)">X-Xydc-Authorization</span> 头读，没有这个头时才回退读 <span style="font-family:var(--mono)">Authorization</span>（兼容关掉 Verify JWT 的部署）。</li>
             </ol>
-            <pre style="background:var(--surface2);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0 0 8px">const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, mcp-session-id, mcp-protocol-version", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Expose-Headers": "mcp-session-id" };
+            <pre style="background:var(--surface2);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0 0 8px">const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-xydc-authorization, mcp-session-id, mcp-protocol-version",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Expose-Headers": "mcp-session-id",
+};
 Deno.serve(async (req) =&gt; {
   if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
-  const r = await fetch("https://mcp.xydc.com/mcp", { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "Authorization": req.headers.get("Authorization") || "", "MCP-Protocol-Version": req.headers.get("MCP-Protocol-Version") || "2025-11-25", ...(req.headers.get("Mcp-Session-Id") ? { "Mcp-Session-Id": req.headers.get("Mcp-Session-Id") } : {}) }, body: await req.text() });
-  const h = new Headers(CORS); h.set("Content-Type", r.headers.get("Content-Type") || "application/json"); const sid = r.headers.get("Mcp-Session-Id"); if (sid) h.set("Mcp-Session-Id", sid);
+  // 关键：西柚 Token 优先从单独的头读，避免被 Supabase 网关当成它自己的 JWT 拦下
+  const xydcAuth = req.headers.get("X-Xydc-Authorization") || req.headers.get("Authorization") || "";
+  const r = await fetch("https://mcp.xydc.com/mcp", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Accept": "application/json, text/event-stream",
+      "Authorization": xydcAuth,
+      "MCP-Protocol-Version": req.headers.get("MCP-Protocol-Version") || "2025-11-25",
+      ...(req.headers.get("Mcp-Session-Id") ? { "Mcp-Session-Id": req.headers.get("Mcp-Session-Id") } : {}),
+    },
+    body: await req.text(),
+  });
+  const h = new Headers(CORS);
+  h.set("Content-Type", r.headers.get("Content-Type") || "application/json");
+  const sid = r.headers.get("Mcp-Session-Id");
+  if (sid) h.set("Mcp-Session-Id", sid);
   return new Response(await r.text(), { status: r.status, headers: h });
 });</pre>
             <ol start="3" style="margin:6px 0;padding-left:20px;font-size:13.5px">
-              <li style="margin-bottom:5px">部署后函数地址形如 <span style="font-family:var(--mono)">https://你的项目.supabase.co/functions/v1/xydc-proxy</span>，把它填到上面「我的中转地址」，通道选「只走我自己的中转地址」，点「诊断连接」显示能连通后就能正常分析了。函数的 Verify JWT 要关掉（页面请求不带 Supabase 登录凭证）。</li>
-              <li>Cloudflare Worker 同理：新建 Worker，用同样的转发逻辑部署，把 Worker 地址填进来即可。</li>
+              <li style="margin-bottom:5px"><b>路线 A（推荐，不用命令行）：保持 Verify JWT 开着。</b>回本页上方填三样：西柚 Token、中转地址 <span style="font-family:var(--mono)">https://你的项目ID.supabase.co/functions/v1/xydc-proxy</span>、Supabase Publishable Key；通道选「只走我自己的中转地址」，点「诊断连接」。页面发请求时 <span style="font-family:var(--mono)">Authorization</span> 带的是 Supabase 的 key（过网关），西柚 Token 走单独的头（到西柚），两边互不冲突。</li>
+              <li style="margin-bottom:5px"><b>路线 B（二选一）：关掉 Verify JWT。</b>网页编辑器里部署时如果有 <b>Verify JWT</b> 开关就关掉；没有开关就用命令行重新部署：<span style="font-family:var(--mono)">supabase functions deploy xydc-proxy --no-verify-jwt</span>。走这条路线时本页的 Publishable Key 可以留空，页面会直接用 <span style="font-family:var(--mono)">Authorization</span> 发西柚 Token。注意：只在网页里改代码、没带 <span style="font-family:var(--mono)">--no-verify-jwt</span> 重新部署，Verify JWT 还是开着的，还是会拦。</li>
+              <li style="margin-bottom:5px">不要直接在浏览器地址栏打开中转地址测通不通：那样不带任何头，Supabase 必然返回 <span style="font-family:var(--mono)">Missing authorization header</span>，那是正常的。只能回本页点「诊断连接 / 测试连接」测。</li>
+              <li>Cloudflare Worker 同理：用同样的转发逻辑（优先读 <span style="font-family:var(--mono)">X-Xydc-Authorization</span>）部署，把 Worker 地址填进来，Publishable Key 留空即可。</li>
             </ol>
           </details>
           <p class="tokstatus" id="diagStatus" role="status"></p>
@@ -230,7 +270,7 @@ Deno.serve(async (req) =&gt; {
           <li style="margin-bottom:6px"><b>文件名不对（最常见）：</b>如果文件叫 <span style="font-family:var(--mono)">index</span>、<span style="font-family:var(--mono)">index.html.txt</span> 或 <span style="font-family:var(--mono)">单ASIN市场分析</span>，双击就打不开。把它重命名为 <b style="font-family:var(--mono)">index.html</b>。Windows 要先在文件资源管理器点「查看 → 显示 → 文件扩展名」，才能看到并改对后缀。</li>
           <li style="margin-bottom:6px"><b>打开方式不对：</b>不要用记事本、Word 打开。右键文件 → <b>打开方式 → 选择 Chrome 或 Edge</b>。打开后地址栏是 <span style="font-family:var(--mono)">file:///…/index.html</span>，看到和本页一样的界面就是打开成功了。</li>
           <li style="margin-bottom:6px"><b>在 GitHub 里点开看到的是代码：</b>这是正常的。GitHub 只是存文件的地方，点 <span style="font-family:var(--mono)">index.html</span> 只会显示代码，不会变成网站。真正的网站地址是 Vercel 给的 <span style="font-family:var(--mono)">https://xxx.vercel.app</span>，要用那个链接打开。</li>
-          <li><b>点「测试连接 / 开始分析」报连不上西柚：</b>这是西柚接口未开放跨域、浏览器直连被拦，和文件、Token 无关。解决办法只有走你自己的中转：部署一个你自己的 Supabase Edge Function 或 Cloudflare Worker 转发到西柚，把地址填到 Token 区下面的「我的中转地址」，再点「诊断连接」确认中转能通。不要用网上公共代理转发 Token，等于把凭证交给陌生服务器。本地 <span style="font-family:var(--mono)">file://</span> 和部署后的 <span style="font-family:var(--mono)">https://</span> 都会遇到同样的跨域问题，区别不在打开方式。</li>
+          <li><b>点「测试连接 / 开始分析」报连不上或 401：</b>先看诊断把 401 分成哪一种。带 <span style="font-family:var(--mono)">Invalid JWT / UNAUTHORIZED</span> 字样的是 Supabase 网关的 Verify JWT 在拦（西柚 Token 被当成 Supabase 的 key），不是 Token 失效：按 Token 区的新版双头方案更新函数代码、填入 Supabase Publishable Key，或关掉 Verify JWT 后用 <span style="font-family:var(--mono)">--no-verify-jwt</span> 重新部署。只有诊断明确说是「西柚返回 401」时，才需要换西柚 Token。不要用网上公共代理转发 Token，等于把凭证交给陌生服务器。</li>
         </ol>
         <p class="hint" style="margin:0">手机上：不要直接在微信里点文件预览，先下载后用 Chrome / Safari 打开，或直接打开 Vercel 的 https 链接使用。</p>
       </section>
@@ -280,8 +320,11 @@ Deno.serve(async (req) =&gt; {
     /* ---------- 连接通道：直连西柚 + 用户自己的中转（二选一，不经任何公共代理） ---------- */
     var LS_MODE_KEY = "xydc_conn_mode";
     var LS_PROXY_KEY = "xydc_custom_proxy";
+    var LS_SB_KEY = "xydc_sb_anon_key";
     function getConnMode(){ var v = ($("connMode") && $("connMode").value) || ""; if (!v){ try { v = localStorage.getItem(LS_MODE_KEY) || "auto"; } catch(e){ v = "auto"; } } if (v !== "direct" && v !== "custom") v = "auto"; return v; }
     function getCustomProxy(){ var v = ($("customProxy") && $("customProxy").value || "").trim(); if (v) return v; try { return localStorage.getItem(LS_PROXY_KEY) || ""; } catch(e){ return ""; } }
+    function getSbKey(){ var el = $("sbKey"); var v = (el && el.value || "").trim(); if (v) return v; try { return (localStorage.getItem(LS_SB_KEY) || "").trim(); } catch(e){ return ""; } }
+    function isSupabaseProxyUrl(u){ return !!u && u.indexOf(".supabase.co/functions/") >= 0; }
     function resolveCustomUrl(){
       var c = getCustomProxy(); if (!c) return null;
       if (c.indexOf("{url}") >= 0) return c.split("{url}").join(encodeURIComponent(MCP_URL));
@@ -294,13 +337,23 @@ Deno.serve(async (req) =&gt; {
       var custom = cu ? { id:"custom", label:"我的中转地址", url:cu } : null;
       if (mode === "direct") return [direct];
       if (mode === "custom") return custom ? [custom] : [];
-      // auto：直连优先，已填自有中转时直连不通自动改走中转；Token 只发给西柚或用户自己的中转
-      return custom ? [direct, custom] : [direct];
+      // auto：已填中转时中转优先（直连已知会被跨域拦，先试中转省时间），中转不通再试直连
+      return custom ? [custom, direct] : [direct];
     }
 
     /* ---------- MCP 客户端（Streamable HTTP + JSON-RPC，经当前通道请求） ---------- */
     function McpError(kind, msg){ this.kind = kind; this.message = msg; }
-    function newSession(){ return { id:null, seq:0, protocol:"2025-11-25", routeUrl:null, routeLabel:"" }; }
+    function newSession(){ return { id:null, seq:0, protocol:"2025-11-25", routeUrl:null, routeLabel:"", routeId:"" }; }
+    // 判断 401/403 的返回体是不是 Supabase 网关在函数运行前拦下的（而不是西柚返回的）
+    function isSupabaseGatewayBody(text){
+      if (!text) return false;
+      var t = String(text);
+      return t.indexOf("UNAUTHORIZED_NO_AUTH_HEADER") >= 0 || t.indexOf("UNAUTHORIZED_INVALID_TOKEN") >= 0 ||
+        t.indexOf("Invalid JWT") >= 0 || t.indexOf("invalid JWT") >= 0 ||
+        t.indexOf("Missing authorization header") >= 0 || t.indexOf("missing authorization") >= 0 ||
+        t.indexOf("No API key found") >= 0 || t.indexOf("JWSError") >= 0;
+    }
+    function snippetOf(text){ var t = String(text || "").replace(/\s+/g, " ").trim(); return t.length > 220 ? t.slice(0, 220) + "…" : t; }
 
     function parseMcpBody(text, contentType, wantId){
       if (contentType && contentType.indexOf("text/event-stream") >= 0){
@@ -324,14 +377,24 @@ Deno.serve(async (req) =&gt; {
       var id = isNotification ? null : session.seq;
       var body = { jsonrpc:"2.0", method:method, params:params || {} };
       if (id !== null) body.id = id;
+      var targetUrl = session.routeUrl || MCP_URL;
+      var isCustom = session.routeId === "custom" || (!!targetUrl && targetUrl !== MCP_URL);
+      var sbKey = isCustom ? getSbKey() : "";
+      var useDual = !!(isCustom && sbKey);
       var headers = {
         "Content-Type":"application/json",
         "Accept":"application/json, text/event-stream",
-        "Authorization":"Bearer " + token,
         "MCP-Protocol-Version": session.protocol
       };
+      if (useDual){
+        // 双头：Authorization 放 Supabase 的 key 过网关 JWT，西柚 Token 走单独的头到函数再转发给西柚
+        headers["Authorization"] = "Bearer " + sbKey;
+        headers["apikey"] = sbKey;
+        headers["X-Xydc-Authorization"] = "Bearer " + token;
+      } else {
+        headers["Authorization"] = "Bearer " + token;
+      }
       if (session.id) headers["Mcp-Session-Id"] = session.id;
-      var targetUrl = session.routeUrl || MCP_URL;
       var ctrl = new AbortController();
       var limit = timeoutMs || 90000;
       var timer = setTimeout(function(){ ctrl.abort(); }, limit);
@@ -346,13 +409,24 @@ Deno.serve(async (req) =&gt; {
       clearTimeout(timer);
       var sid = resp.headers.get("Mcp-Session-Id");
       if (sid) session.id = sid;
-      if (resp.status === 401 || resp.status === 403)
-        throw new McpError("auth", "西柚接口返回 " + resp.status + "：Token 无效或已过期。请到 platform.xydc.com 凭证管理里重新复制 MCP Token 再填进来。");
+      var respText = "";
+      if (!resp.ok || resp.status === 401 || resp.status === 403){ try { respText = await resp.text(); } catch(e){ respText = ""; } }
+      if (resp.status === 401 || resp.status === 403){
+        // 先分清是谁返回的 401：Supabase 网关（函数没运行）还是西柚（函数已转发）
+        if (isCustom && (isSupabaseGatewayBody(respText) || (isSupabaseProxyUrl(targetUrl) && !useDual && respText && respText.indexOf("code") >= 0 && respText.indexOf("UNAUTHORIZED") >= 0))){
+          throw new McpError("proxy-jwt", "【Supabase 中转拦的，不是西柚 Token 无效】Supabase 网关返回 " + resp.status + "，在函数运行前就拦下了：它把请求头里的内容当成 Supabase 自己的 JWT 来验。西柚根本没收到请求，所以换新 Token 也没用。原始返回：" + snippetOf(respText) + "。解决（二选一）：① 保持 Verify JWT 开着——把函数代码换成本页下方的新版双头代码重新 Deploy，并在本页填入 Supabase Publishable / Anon Key（填了之后页面会自动改用双头发送）；② 关掉 Verify JWT 后重新部署：supabase functions deploy xydc-proxy --no-verify-jwt。改好后重新点「诊断连接」。另外确认函数代码是新版：旧版只读 Authorization 头，读不到 X-Xydc-Authorization，也会继续 401。");
+        }
+        if (isCustom && isSupabaseProxyUrl(targetUrl) && !useDual && !getSbKey()){
+          // 走 Supabase 且没填 key、也没证据表明已关 Verify JWT 时，401 最常见原因就是网关拦截，给出两种可能但把网关排第一
+          throw new McpError("proxy-jwt", "【先按 Supabase 拦截处理，别先换 Token】经 Supabase 中转返回 " + resp.status + (respText ? "，原始返回：" + snippetOf(respText) : "") + "。你还没在本页填 Supabase Publishable Key，也没有用双头发送，西柚 Token 是直接放在 Authorization 头里发的，Supabase 默认开着的 Verify JWT 会把它当成 Supabase 的 key 拒掉——这和你遇到的「换新 Token 还是 401」完全吻合。先做：① 函数换新版双头代码重新 Deploy；② 本页填入 Supabase Publishable / Anon Key 后重新诊断。如果这样改完诊断仍报 401 且返回里没有 Invalid JWT / UNAUTHORIZED 字样，那才是西柚返回的 401，再去换西柚 Token。另一条路是关掉 Verify JWT：supabase functions deploy xydc-proxy --no-verify-jwt。");
+        }
+        throw new McpError("auth", "【西柚返回的 " + resp.status + "】请求已经过了中转、到了西柚，是西柚不认这个 Token：Token 无效或已过期。请到 platform.xydc.com 凭证管理里重新复制 MCP Token 再填进来（复制时别带空格、别带 Bearer 前缀）。" + (useDual ? "你现在用的是双头发送：如果 Supabase 函数还没换成本页下方的新版代码，旧函数会把 Supabase 的 key 当成西柚 Token 转发，也会得到这个结果——先确认函数已更新并重新 Deploy，再判断是不是 Token 本身的问题。" : "") + (respText ? "原始返回：" + snippetOf(respText) : ""));
+      }
       if (resp.status === 429)
-        throw new McpError("quota", "西柚接口返回 429：Credit 额度或调用频率已达上限，等额度重置后再试。");
+        throw new McpError("quota", "接口返回 429：Credit 额度或调用频率已达上限，等额度重置后再试。");
       if (isNotification){ if (resp.status === 202 || resp.ok) return null; throw new McpError("proto", "MCP 初始化通知未被接受（HTTP " + resp.status + "）。"); }
-      if (!resp.ok) throw new McpError("http", "西柚接口返回 HTTP " + resp.status + "，本次调用失败，没有拿到数据。");
-      var text = await resp.text();
+      if (!resp.ok) throw new McpError("http", "接口返回 HTTP " + resp.status + "，本次调用失败，没有拿到数据。" + (respText ? "原始返回：" + snippetOf(respText) : ""));
+      var text = respText || await resp.text();
       var msg = parseMcpBody(text, resp.headers.get("Content-Type") || "", id);
       if (!msg) throw new McpError("proto", "西柚接口返回的内容无法解析（不是预期的 MCP 响应）。");
       if (msg.error) throw new McpError("rpc", "西柚接口报错：" + ((msg.error && msg.error.message) || "未知错误"));
@@ -360,7 +434,7 @@ Deno.serve(async (req) =&gt; {
     }
 
     async function mcpInitOnRoute(session, token, route){
-      session.routeUrl = route.url; session.routeLabel = route.label;
+      session.routeUrl = route.url; session.routeLabel = route.label; session.routeId = route.id;
       var r = await mcpSend(session, token, "initialize", {
         protocolVersion: session.protocol, capabilities:{},
         clientInfo:{ name:"asin-market-web", version:"1" }
@@ -383,15 +457,15 @@ Deno.serve(async (req) =&gt; {
         try {
           await mcpInitOnRoute(trial, token, route);
           session.id = trial.id; session.seq = trial.seq; session.protocol = trial.protocol;
-          session.routeUrl = trial.routeUrl; session.routeLabel = trial.routeLabel;
+          session.routeUrl = trial.routeUrl; session.routeLabel = trial.routeLabel; session.routeId = trial.routeId;
           return route;
         } catch(e){
           errors.push(route.label + "：" + (e.message || e));
-          // Token 本身无效时换通道也没用，直接报错，不再浪费额度
-          if (e && e.kind === "auth") throw e;
+          // 西柚 Token 无效、或 Supabase 网关拦截时，换通道也解决不了同一个问题，直接把明确结论抛出去
+          if (e && (e.kind === "auth" || e.kind === "proxy-jwt")) throw e;
         }
       }
-      throw new McpError("network", "所有通道都连不上西柚，本次没有拿到任何数据。已试：" + errors.join("；") + "。直连失败基本就是西柚未开放浏览器跨域。处理办法：①部署你自己的中转（Supabase Edge Function 或 Cloudflare Worker 转发到 https://mcp.xydc.com/mcp），把地址填到上方「我的中转地址」，通道选「自动」或「只走我自己的中转地址」再试；②点上方「诊断连接」确认直连与中转各自结果；③不要用网上公共代理转发 Token，不安全。");
+      throw new McpError("network", "所有通道都连不上西柚，本次没有拿到任何数据。已试：" + errors.join("；") + "。直连失败基本就是西柚未开放浏览器跨域。处理办法：①用本页下方新版双头代码部署/更新 Supabase 中转，把地址和 Publishable Key 填到上方，通道选「只走我自己的中转地址」再试；②点上方「诊断连接」看每条通道到底卡在哪一步；③不要用网上公共代理转发 Token，不安全。");
     }
 
     async function callTool(session, token, name, args){
@@ -431,11 +505,13 @@ Deno.serve(async (req) =&gt; {
       box.classList.remove("hidden"); // 中转地址始终可见，方便直连不通时直接填入
     }
     (function initConnUI(){
-      var modeEl = $("connMode"), pxEl = $("customProxy");
+      var modeEl = $("connMode"), pxEl = $("customProxy"), sbEl = $("sbKey");
       try { var sm = localStorage.getItem(LS_MODE_KEY); if (sm && modeEl) modeEl.value = sm; } catch(e){}
       try { var sp = localStorage.getItem(LS_PROXY_KEY); if (sp && pxEl) pxEl.value = sp; } catch(e){}
+      try { var sk = localStorage.getItem(LS_SB_KEY); if (sk && sbEl) sbEl.value = sk; } catch(e){}
       if (modeEl) modeEl.addEventListener("change", function(){ try { localStorage.setItem(LS_MODE_KEY, modeEl.value); } catch(e){} syncProxyBox(); $("diagStatus").innerHTML = ""; $("diagList").classList.add("hidden"); });
       if (pxEl) pxEl.addEventListener("change", function(){ try { localStorage.setItem(LS_PROXY_KEY, pxEl.value.trim()); } catch(e){} });
+      if (sbEl) sbEl.addEventListener("change", function(){ try { var v = sbEl.value.trim(); if (v) localStorage.setItem(LS_SB_KEY, v); else localStorage.removeItem(LS_SB_KEY); } catch(e){} });
       syncProxyBox();
     })();
 
@@ -461,7 +537,7 @@ Deno.serve(async (req) =&gt; {
           row.innerHTML = "<b>" + esc(route.label) + '</b>：<span class="err">不通 ✗</span> ' + esc(e.message || e);
         }
       }
-      st.innerHTML = anyOk ? '<span class="ok">诊断完成：至少有一条通道能连通，保持当前连接方式直接点「开始分析」即可，页面会自动用通的那条。</span>' : '<span class="err">诊断完成：当前所有通道都不通。换网络再试，或改用你自己的中转地址（最稳）。</span>';
+      st.innerHTML = anyOk ? '<span class="ok">诊断完成：至少有一条通道能连通，保持当前连接方式直接点「开始分析」即可，页面会自动用通的那条。</span>' : '<span class="err">诊断完成：当前所有通道都不通。看上面每条的具体原因：写着 Supabase / Invalid JWT 的按双头方案改（更新函数代码 + 填 Publishable Key，或 --no-verify-jwt 重新部署），写着西柚返回 401 的才换西柚 Token，写着浏览器拦截的是直连跨域。</span>';
       btn.disabled = false; btn.textContent = "诊断连接";
     });
 
@@ -849,6 +925,7 @@ Deno.serve(async (req) =&gt; {
         var bn = clone.querySelector("#banner"); if (bn){ bn.innerHTML = ""; bn.className = "banner error"; }
         var ts = clone.querySelector("#tokStatus"); if (ts) ts.innerHTML = "";
         var cp = clone.querySelector("#customProxy"); if (cp){ cp.removeAttribute("value"); cp.value = ""; }
+        var sbk = clone.querySelector("#sbKey"); if (sbk){ sbk.removeAttribute("value"); sbk.value = ""; }
         var ds = clone.querySelector("#diagStatus"); if (ds) ds.innerHTML = "";
         var dl2 = clone.querySelector("#diagList"); if (dl2){ dl2.innerHTML = ""; dl2.className = "hidden"; }
         var html = "<!doctype html>\n" + clone.outerHTML;
