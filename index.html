@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="data:," />
+    <title>单ASIN市场分析网页版</title>
+    <style>
+      button, [role="button"], select, summary, input:not([type="checkbox"], [type="radio"]) { min-height: 2.25rem; }
+      :root{
+        --bg:#f4f6f5; --surface:#ffffff; --surface2:#edf1ef; --ink:#16211d; --ink2:#43534c;
+        --line:#d5ddd9; --accent:#0d6e5f; --accent-ink:#ffffff;
+        --good:#0d6e5f; --warn:#a05c00; --bad:#b3362b; --good-bg:#e2f2ec; --warn-bg:#fbf0da; --bad-bg:#fbe7e4;
+        --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+      }
+      @media (prefers-color-scheme: dark){
+        :root{
+          --bg:#101613; --surface:#182019; --surface2:#1f2a22;
+          --ink:#e9efec; --ink2:#a7b5ad; --line:#2e3d34; --accent:#2fae97; --accent-ink:#0b1512;
+          --good:#3ec9ab; --warn:#e8a94e; --bad:#ef7d6e; --good-bg:#17352c; --warn-bg:#3a2c12; --bad-bg:#3c1f1b;
+        }
+      }
+      *{box-sizing:border-box}
+      body{margin:0;background:var(--bg);color:var(--ink);
+        font-family:"Noto Sans SC","PingFang SC","Microsoft YaHei",system-ui,-apple-system,"Segoe UI",sans-serif;
+        font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
+      .wrap{max-width:1060px;margin:0 auto;padding:20px 16px 56px}
+      h1{font-family:"Noto Serif SC","Songti SC",serif;font-size:clamp(24px,4.5vw,34px);line-height:1.25;margin:6px 0 6px;font-weight:700}
+      .lede{color:var(--ink2);max-width:46em;margin:0 0 20px}
+      h2{font-size:17px;margin:0 0 10px}
+      h3{font-size:14px;margin:0 0 6px}
+      .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+      label{display:block;font-size:13px;color:var(--ink2);margin-bottom:5px;font-weight:600}
+      input[type=text],input[type=password],select{width:100%;padding:8px 10px;border:1px solid var(--line);
+        border-radius:7px;background:var(--surface);color:var(--ink);font-size:15px;font-family:inherit}
+      input.mono{font-family:var(--mono);font-size:13px}
+      .row{display:flex;gap:10px;flex-wrap:wrap}
+      .row>*{flex:1 1 160px}
+      .btn{appearance:none;border:1px solid var(--accent);background:var(--accent);color:var(--accent-ink);
+        border-radius:7px;padding:8px 18px;font-size:15px;font-weight:600;cursor:pointer;font-family:inherit;min-height:40px}
+      .btn:disabled{opacity:.55;cursor:wait}
+      .btn.ghost{background:transparent;color:var(--accent)}
+      .btn.small{padding:5px 12px;font-size:13px;min-height:36px}
+      .btn.danger{border-color:var(--bad);color:var(--bad);background:transparent}
+      .hint{font-size:12.5px;color:var(--ink2);margin-top:8px}
+      .hint a{color:var(--accent)}
+      .tokstatus{font-size:13px;margin-top:8px;min-height:1.2em}
+      .ok{color:var(--good)} .err{color:var(--bad)} .wrn{color:var(--warn)}
+      .steps{list-style:none;margin:10px 0 0;padding:0;font-size:13.5px}
+      .steps li{padding:4px 0 4px 26px;position:relative;color:var(--ink2)}
+      .steps li::before{content:"";position:absolute;left:2px;top:9px;width:11px;height:11px;border-radius:50%;
+        border:2px solid var(--line);background:var(--surface)}
+      .steps li.run{color:var(--ink)} .steps li.run::before{border-color:var(--accent);background:var(--accent)}
+      .steps li.done{color:var(--ink2)} .steps li.done::before{border-color:var(--good);background:var(--good)}
+      .steps li.fail{color:var(--bad)} .steps li.fail::before{border-color:var(--bad);background:var(--bad)}
+      .banner{border-radius:8px;padding:12px 14px;font-size:14px;margin-bottom:14px;display:none}
+      .banner.show{display:block}
+      .banner.error{background:var(--bad-bg);border:1px solid var(--bad);color:var(--ink)}
+      .banner.error b{color:var(--bad)}
+      /* report */
+      .verdict{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+      .gauge{flex:0 0 auto;text-align:center}
+      .gauge .num{font-family:var(--mono);font-size:44px;font-weight:700;line-height:1}
+      .gauge .of{color:var(--ink2);font-size:12px}
+      .vtag{display:inline-block;padding:4px 14px;border-radius:999px;font-weight:700;font-size:16px}
+      .vtag.g{background:var(--good-bg);color:var(--good)} .vtag.w{background:var(--warn-bg);color:var(--warn)} .vtag.b{background:var(--bad-bg);color:var(--bad)}
+      .vdesc{color:var(--ink2);max-width:34em;margin-top:6px}
+      .meta{font-size:12.5px;color:var(--ink2)}
+      .meta a{color:var(--accent)}
+      .dims{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-top:14px}
+      .dim{background:var(--surface2);border-radius:8px;padding:10px 12px}
+      .dim .top{display:flex;justify-content:space-between;font-size:13px;font-weight:600}
+      .dim .pts{font-family:var(--mono)}
+      .bar{height:7px;background:var(--line);border-radius:99px;margin-top:7px;overflow:hidden}
+      .bar i{display:block;height:100%;background:var(--accent);border-radius:99px}
+      .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+      @media (max-width:760px){.grid2{grid-template-columns:1fr}}
+      .kv{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;font-size:14px}
+      .kv dt{color:var(--ink2)} .kv dd{margin:0;font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+      table{width:100%;border-collapse:collapse;font-size:13.5px}
+      th{text-align:left;color:var(--ink2);font-weight:600;padding:6px 8px;border-bottom:2px solid var(--line);white-space:nowrap}
+      td{padding:6px 8px;border-bottom:1px solid var(--line);font-variant-numeric:tabular-nums;vertical-align:top}
+      td.num,th.num{text-align:right}
+      .kw{font-weight:600;word-break:break-word}
+      .zh{color:var(--ink2);font-size:12px}
+      .self td{background:var(--good-bg)}
+      ul.sig,ul.risk{margin:4px 0 0;padding-left:20px;font-size:14px}
+      ul.sig li::marker{color:var(--good)} ul.risk li::marker{color:var(--bad)}
+      details{margin-top:10px}
+      summary{cursor:pointer;font-size:13.5px;font-weight:600;color:var(--accent);padding:6px 0}
+      .scoreitem{display:flex;justify-content:space-between;gap:10px;font-size:13px;padding:4px 0;border-bottom:1px dashed var(--line)}
+      .scoreitem span:last-child{font-family:var(--mono);white-space:nowrap}
+      .hist{display:flex;flex-direction:column;gap:8px}
+      .hrow{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:8px;padding:9px 12px;background:var(--surface);flex-wrap:wrap}
+      .hrow .grow{flex:1 1 auto;min-width:140px}
+      .hrow .score{font-family:var(--mono);font-weight:700;font-size:18px}
+      .pill{font-size:12px;padding:2px 9px;border-radius:999px;font-weight:700}
+      .pill.g{background:var(--good-bg);color:var(--good)} .pill.w{background:var(--warn-bg);color:var(--warn)} .pill.b{background:var(--bad-bg);color:var(--bad)}
+      .pill.ex{background:var(--surface2);color:var(--ink2)}
+      .chart{display:flex;align-items:flex-end;gap:8px;height:110px;margin-top:8px}
+      .col{flex:1;text-align:center}
+      .col .b{background:var(--accent);border-radius:4px 4px 0 0;margin:0 auto;width:70%;min-height:2px}
+      .col .v{font-family:var(--mono);font-size:12px}
+      .col .m{font-size:11.5px;color:var(--ink2)}
+      .hidden{display:none!important}
+      footer{color:var(--ink2);font-size:12.5px;margin-top:8px}
+    </style>
+  </head>
+  <body>
+    <main class="wrap">
+      <h1>单 ASIN 市场分析</h1>
+      <p class="lede">填入你自己的西柚洞察 MCP Token，输入一个 ASIN 和站点，页面直接连西柚洞察拉产品、流量、关键词、竞品和订单数据，按 100 分制算出「能不能尝试上架」的确定性。</p>
+
+      <section class="card" aria-labelledby="tok-h">
+        <h2 id="tok-h">1 · 西柚洞察 MCP Token</h2>
+        <label for="token">MCP Token（在 platform.xydc.com 的凭证管理里复制）</label>
+        <div class="row">
+          <div style="flex:3 1 260px"><input type="password" id="token" class="mono" autocomplete="off" placeholder="粘贴你的 MCP Token" /></div>
+          <div style="flex:0 0 auto;display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn small" id="saveTok" type="button">保存到本机</button>
+            <button class="btn small ghost" id="testTok" type="button">测试连接</button>
+            <button class="btn small danger" id="clearTok" type="button">清除</button>
+          </div>
+        </div>
+        <p class="hint">Token 只保存在这台设备的浏览器本地（localStorage），不上传、不共享、不会写进页面代码。换电脑或换浏览器需要重新填一次。没有 Token 时可以先看下面的示例报告。</p>
+        <p class="tokstatus" id="tokStatus" role="status"></p>
+      </section>
+
+      <section class="card" aria-labelledby="an-h">
+        <h2 id="an-h">2 · 输入 ASIN 开始分析</h2>
+        <div class="row">
+          <div style="flex:2 1 200px">
+            <label for="asin">ASIN</label>
+            <input type="text" id="asin" class="mono" placeholder="如 B0GXHZZGY5" maxlength="10" autocomplete="off" />
+          </div>
+          <div>
+            <label for="site">站点</label>
+            <select id="site">
+              <option value="IT">意大利 IT</option><option value="DE">德国 DE</option>
+              <option value="FR">法国 FR</option><option value="ES">西班牙 ES</option>
+              <option value="UK">英国 UK</option><option value="US">美国 US</option>
+              <option value="CA">加拿大 CA</option><option value="MX">墨西哥 MX</option>
+              <option value="BR">巴西 BR</option><option value="JP">日本 JP</option>
+              <option value="AE">阿联酋 AE</option><option value="AU">澳大利亚 AU</option>
+              <option value="SA">沙特 SA</option>
+            </select>
+          </div>
+          <div style="flex:0 0 auto;display:flex;align-items:flex-end">
+            <button class="btn" id="go" type="button">开始分析</button>
+          </div>
+        </div>
+        <p class="hint">一次完整分析调用 6 个只读接口，约 7 Credit，耗时约 1–4 分钟（视西柚响应速度）。</p>
+        <ul class="steps hidden" id="steps">
+          <li data-step="quota">检查账户额度</li>
+          <li data-step="info">产品信息 get_asin_info</li>
+          <li data-step="traffic">近 7 天流量 get_asin_traffic</li>
+          <li data-step="keywords">反查关键词 get_asin_keywords</li>
+          <li data-step="orders">近 6 个月订单 get_asin_order_trends</li>
+          <li data-step="kwinfo">主关键词需求 get_keyword_info</li>
+          <li data-step="kwasin">主关键词竞品 get_keyword_asin_analysis</li>
+        </ul>
+      </section>
+
+      <div class="banner error" id="banner" role="alert"></div>
+
+      <section id="reportZone"></section>
+
+      <section class="card" aria-labelledby="hist-h">
+        <h2 id="hist-h">分析历史</h2>
+        <div class="hist" id="hist"></div>
+      </section>
+
+      <footer>评分规则固定：市场需求 30 + 竞争强度 25 + 价格带与费用 15 + 流量健康度 15 + 产品成熟度 15 = 100 分；≥65 值得尝试上架，45–64 谨慎尝试，&lt;45 不建议上架。数据全部来自西柚洞察接口返回，拉不到就报错，不补数。订单量为西柚分档估算值，与自家店铺后台数据不一致时以店铺后台为准。</footer>
+    </main>
+    <script>
+    "use strict";
+    var MCP_URL = "https://mcp.xydc.com/mcp";
+    var LS_KEY = "xydc_mcp_token";
+    var $ = function(id){ return document.getElementById(id); };
+    var reports = [];   // 本次打开期间的报告（含预置示例）
+    var currentId = null;
+
+    /* ---------- Token 本机保存 ---------- */
+    function loadToken(){ try { return localStorage.getItem(LS_KEY) || ""; } catch(e){ return ""; } }
+    function storeToken(t){ try { if(t) localStorage.setItem(LS_KEY, t); else localStorage.removeItem(LS_KEY); } catch(e){} }
+    function getToken(){ return ($("token").value || "").trim() || loadToken(); }
+
+    /* ---------- MCP 客户端（浏览器直连，Streamable HTTP + JSON-RPC） ---------- */
+    function McpError(kind, msg){ this.kind = kind; this.message = msg; }
+    function newSession(){ return { id:null, seq:0, protocol:"2025-11-25" }; }
+
+    function parseMcpBody(text, contentType, wantId){
+      if (contentType && contentType.indexOf("text/event-stream") >= 0){
+        var lines = text.split(/\r?\n/), datas = [], found = null;
+        for (var i=0;i<lines.length;i++){
+          var ln = lines[i];
+          if (ln.indexOf("data:") === 0){ datas.push(ln.slice(5).trim()); }
+          else if (ln === "" && datas.length){
+            try { var m = JSON.parse(datas.join("\n")); if (m && m.id === wantId) found = m; } catch(e){}
+            datas = [];
+          }
+        }
+        if (datas.length){ try { var m2 = JSON.parse(datas.join("\n")); if (m2 && m2.id === wantId) found = m2; } catch(e){} }
+        return found;
+      }
+      try { return JSON.parse(text); } catch(e){ return null; }
+    }
+
+    async function mcpSend(session, token, method, params, isNotification){
+      session.seq += 1;
+      var id = isNotification ? null : session.seq;
+      var body = { jsonrpc:"2.0", method:method, params:params || {} };
+      if (id !== null) body.id = id;
+      var headers = {
+        "Content-Type":"application/json",
+        "Accept":"application/json, text/event-stream",
+        "Authorization":"Bearer " + token,
+        "MCP-Protocol-Version": session.protocol
+      };
+      if (session.id) headers["Mcp-Session-Id"] = session.id;
+      var ctrl = new AbortController();
+      var timer = setTimeout(function(){ ctrl.abort(); }, 90000);
+      var resp;
+      try {
+        resp = await fetch(MCP_URL, { method:"POST", headers:headers, body:JSON.stringify(body), signal:ctrl.signal, redirect:"error" });
+      } catch(e) {
+        clearTimeout(timer);
+        if (e && e.name === "AbortError") throw new McpError("timeout", "请求超时（90 秒），西柚接口没有在规定时间内响应。");
+        throw new McpError("network", "连不上西柚洞察接口（https://mcp.xydc.com/mcp）。多半是浏览器跨域限制、网络不通或接口临时不可用，本次没有拿到任何数据。");
+      }
+      clearTimeout(timer);
+      var sid = resp.headers.get("Mcp-Session-Id");
+      if (sid) session.id = sid;
+      if (resp.status === 401 || resp.status === 403)
+        throw new McpError("auth", "西柚接口返回 " + resp.status + "：Token 无效或已过期。请到 platform.xydc.com 凭证管理里重新复制 MCP Token 再填进来。");
+      if (resp.status === 429)
+        throw new McpError("quota", "西柚接口返回 429：Credit 额度或调用频率已达上限，等额度重置后再试。");
+      if (isNotification){ if (resp.status === 202 || resp.ok) return null; throw new McpError("proto", "MCP 初始化通知未被接受（HTTP " + resp.status + "）。"); }
+      if (!resp.ok) throw new McpError("http", "西柚接口返回 HTTP " + resp.status + "，本次调用失败，没有拿到数据。");
+      var text = await resp.text();
+      var msg = parseMcpBody(text, resp.headers.get("Content-Type") || "", id);
+      if (!msg) throw new McpError("proto", "西柚接口返回的内容无法解析（不是预期的 MCP 响应）。");
+      if (msg.error) throw new McpError("rpc", "西柚接口报错：" + ((msg.error && msg.error.message) || "未知错误"));
+      return msg.result;
+    }
+
+    async function mcpInit(session, token){
+      var r = await mcpSend(session, token, "initialize", {
+        protocolVersion: session.protocol, capabilities:{},
+        clientInfo:{ name:"asin-market-web", version:"1" }
+      });
+      if (r && r.protocolVersion) session.protocol = r.protocolVersion;
+      await mcpSend(session, token, "notifications/initialized", {}, true);
+    }
+
+    async function callTool(session, token, name, args){
+      var r = await mcpSend(session, token, "tools/call", { name:name, arguments:args });
+      if (!r) throw new McpError("proto", name + " 没有返回结果。");
+      if (r.isError){
+        var em = "";
+        if (r.content) for (var i=0;i<r.content.length;i++){ if (r.content[i].type === "text") em += r.content[i].text; }
+        throw new McpError("tool", name + " 调用失败：" + (em || "接口返回错误"));
+      }
+      if (r.structuredContent) return r.structuredContent;
+      if (r.content){
+        for (var j=0;j<r.content.length;j++){
+          if (r.content[j].type === "text"){ try { return JSON.parse(r.content[j].text); } catch(e){} }
+        }
+      }
+      throw new McpError("proto", name + " 返回的数据格式无法识别。");
+    }
+
+    /* ---------- 工具 ---------- */
+    function num(v){ if (v === null || v === undefined || v === "") return null; var n = Number(v); return isNaN(n) ? null : n; }
+    function fmt(n){ if (n === null || n === undefined) return "—"; return Number(n).toLocaleString("zh-CN"); }
+    function money(v, cur){ if (v === null || v === undefined) return "—"; var s = {EUR:"€",USD:"$",GBP:"£",JPY:"¥",CAD:"C$",AUD:"A$"}[cur] || (cur ? cur + " " : ""); return s + Number(v).toLocaleString("zh-CN",{maximumFractionDigits:2}); }
+    function pct(v, digits){ if (v === null || v === undefined) return "—"; return (Number(v)*100).toFixed(digits === undefined ? 1 : digits) + "%"; }
+    function esc(s){ return String(s === null || s === undefined ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+    function monthShift(base, delta){ var d = new Date(base.getFullYear(), base.getMonth()+delta, 1); return d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0"); }
+    function setStep(name, state){
+      var li = document.querySelector('#steps li[data-step="' + name + '"]');
+      if (li) li.className = state;
+    }
+    function showBanner(html){ var b = $("banner"); b.innerHTML = html; b.className = "banner error show"; }
+    function hideBanner(){ $("banner").className = "banner error"; $("banner").innerHTML = ""; }
+
+    /* ---------- 测试连接 ---------- */
+    $("testTok").addEventListener("click", async function(){
+      var t = getToken(), st = $("tokStatus");
+      if (!t){ st.innerHTML = '<span class="err">先粘贴 Token 再测试。</span>'; return; }
+      st.textContent = "正在连接西柚洞察…";
+      try {
+        var s = newSession(); await mcpInit(s, t);
+        var q = await callTool(s, t, "get_account_credit_quota", { user_task:"测试西柚洞察 MCP 连接", intent_summary:"查询账户额度，验证 Token 可用" });
+        var d = q.data || q;
+        var mo = d.monthly || {}, wk = d.weekly || {};
+        st.innerHTML = '<span class="ok">连接成功。</span> 套餐 ' + esc(d.planName || "—") +
+          "，本月剩余 " + fmt(mo.remaining !== undefined ? mo.remaining : mo.remain) + " Credit，本周剩余 " + fmt(wk.remaining !== undefined ? wk.remaining : wk.remain) + " Credit。";
+      } catch(e){ st.innerHTML = '<span class="err">连接失败：' + esc(e.message || e) + "</span>"; }
+    });
+    $("saveTok").addEventListener("click", function(){
+      var t = ($("token").value || "").trim(), st = $("tokStatus");
+      if (!t){ st.innerHTML = '<span class="err">输入框是空的，没有可保存的 Token。</span>'; return; }
+      storeToken(t); st.innerHTML = '<span class="ok">已保存到本机浏览器，下次打开自动带出。</span>';
+    });
+    $("clearTok").addEventListener("click", function(){
+      storeToken(""); $("token").value = ""; $("tokStatus").innerHTML = '<span class="wrn">已清除本机保存的 Token。</span>';
+    });
+
+    /* ---------- 分析流程 ---------- */
+    $("go").addEventListener("click", async function(){
+      hideBanner();
+      var asin = ($("asin").value || "").trim().toUpperCase();
+      var country = $("site").value;
+      var token = getToken();
+      if (!/^[A-Z0-9]{10}$/.test(asin)){ showBanner("<b>ASIN 格式不对：</b>应为 10 位字母数字，如 B0GXHZZGY5。"); return; }
+      if (!token){ showBanner("<b>还没有 Token：</b>先在上面填入你的西柚洞察 MCP Token 并保存，再开始分析。没有 Token 时页面连不上西柚，不会出数据。"); return; }
+      var btn = $("go"); btn.disabled = true; btn.textContent = "分析中…";
+      $("steps").classList.remove("hidden");
+      ["quota","info","traffic","keywords","orders","kwinfo","kwasin"].forEach(function(k){ setStep(k, ""); });
+      var UT = "分析 ASIN " + asin + " " + country + " 站的市场数据，判断是否值得尝试上架销售";
+      var session = newSession();
+      try {
+        await mcpInit(session, token);
+        setStep("quota","run");
+        var quota = null;
+        try { var q = await callTool(session, token, "get_account_credit_quota", { user_task:UT, intent_summary:"查询剩余额度" }); quota = q.data || q; } catch(e){ /* 额度查不到不阻断分析 */ }
+        setStep("quota","done");
+
+        setStep("info","run");
+        var infoR = await callTool(session, token, "get_asin_info", { asins:[asin], country:country, user_task:UT, intent_summary:"查询产品标题、价格、评分、FBA费与佣金" });
+        var infoE = ((infoR.data || {}).entities || [])[0];
+        if (!infoE) throw new McpError("empty", "西柚没有返回 ASIN " + asin + " 在 " + country + " 站的产品信息，可能 ASIN 不存在或站点选错了。");
+        setStep("info","done");
+
+        setStep("traffic","run");
+        var trR = await callTool(session, token, "get_asin_traffic", { asins:[asin], country:country, user_task:UT, intent_summary:"查询近7天自然与广告流量" });
+        var trE = ((trR.data || {}).entities || [])[0] || {};
+        setStep("traffic","done");
+
+        setStep("keywords","run");
+        var kwR = await callTool(session, token, "get_asin_keywords", { asin:asin, country:country, page:1, user_task:UT, intent_summary:"反查该ASIN近7天流量关键词" });
+        var kwList = ((kwR.data || {}).list || []).slice();
+        kwList.sort(function(a,b){ var ta=((a.trafficSummary||{}).traffic||{}).total||0, tb=((b.trafficSummary||{}).traffic||{}).total||0; return tb-ta; });
+        setStep("keywords","done");
+
+        setStep("orders","run");
+        var now = new Date();
+        var ordR = await callTool(session, token, "get_asin_order_trends", { asin:asin, country:country, start_month:monthShift(now,-6), end_month:monthShift(now,-1), user_task:UT, intent_summary:"查询近6个月订单趋势" });
+        var trends = (ordR.data || {}).trends || [];
+        setStep("orders","done");
+
+        var mainKw = kwList.length ? kwList[0] : null;
+        var kwInfo = null, competitors = [];
+        if (mainKw){
+          setStep("kwinfo","run");
+          var kiR = await callTool(session, token, "get_keyword_info", { keywords:[mainKw.searchTerm], country:country, user_task:UT, intent_summary:"查询主关键词搜索量、竞争难度与CPC" });
+          kwInfo = ((kiR.data || {}).list || [])[0] || null;
+          setStep("kwinfo","done");
+          setStep("kwasin","run");
+          var kaR = await callTool(session, token, "get_keyword_asin_analysis", { keyword:mainKw.searchTerm, country:country, user_task:UT, intent_summary:"查询主关键词下竞品格局" });
+          competitors = ((kaR.data || {}).list || []).slice();
+          competitors.sort(function(a,b){ var ta=((a.trafficSummary||{}).traffic||{}).total||0, tb=((b.trafficSummary||{}).traffic||{}).total||0; return tb-ta; });
+          setStep("kwasin","done");
+        } else { setStep("kwinfo","done"); setStep("kwasin","done"); }
+
+        var report = normalize(asin, country, infoE, trE, kwList, kwR.data || {}, mainKw, kwInfo, competitors, trends, quota, false);
+        reports.unshift(report); currentId = report.id;
+        renderHistory(); renderReport(report);
+        window.scrollTo({ top: $("reportZone").offsetTop - 10, behavior:"smooth" });
+      } catch(e){
+        ["quota","info","traffic","keywords","orders","kwinfo","kwasin"].forEach(function(k){
+          var li = document.querySelector('#steps li[data-step="' + k + '"]');
+          if (li && li.className === "run") li.className = "fail";
+        });
+        showBanner("<b>分析失败，没有生成报告。</b>" + esc(e.message || e));
+      } finally { btn.disabled = false; btn.textContent = "开始分析"; }
+    });
+
+    /* ---------- 数据归一化 ---------- */
+    function rankOf(item, pos){ var rs = item.ranks || []; for (var i=0;i<rs.length;i++){ if (rs[i].position === pos) return rs[i].totalRank || null; } return null; }
+    function normalize(asin, country, info, tr, kwList, kwData, mainKw, kwInfo, competitors, trends, quota, isExample){
+      var kwCounts = kwData.searchTermCount || [];
+      var orgCount = null, adCount = null;
+      kwCounts.forEach(function(c){ if (c.type === "organic") orgCount = c.count; if (c.type === "advertising") adCount = c.count; });
+      var r = {
+        id: "r" + Date.now() + Math.floor(Math.random()*999), example: !!isExample,
+        asin: asin, country: country, fetchedAt: new Date().toLocaleString("zh-CN"),
+        info: {
+          title: info.title || "", brand: info.brand || "", price: num(info.price), currency: info.currency || "",
+          stars: num(info.stars), ratings: num(info.ratings), fbaFee: num(info.fbaFee),
+          referralRatio: num(info.referralFeeRatio), fulfillment: info.fulfillmentType || "",
+          category: (info.internalCategoryTree && info.internalCategoryTree.categoryName && info.internalCategoryTree.categoryName.translated) || "",
+          streetDate: info.streetDate || "", url: info.amazonUrl || ""
+        },
+        traffic: {
+          total: num(tr.totalTraffic), organic: num(tr.organicTraffic), ad: num(tr.advertisingTraffic),
+          organicRatio: num(tr.organicTrafficRatio), growth: num(tr.totalTrafficGrowthRate),
+          prevTotal: num(tr.previous7DaysTotalTraffic),
+          organicTerms: orgCount !== null ? orgCount : num(tr.organicSearchTermCount),
+          adTerms: adCount !== null ? adCount : num(tr.advertisingSearchTermCount)
+        },
+        keywords: kwList.slice(0,10).map(function(k){
+          return { kw:k.searchTerm, zh:k.searchTermZh || "", traffic: num(((k.trafficSummary||{}).traffic||{}).total) || 0, or: rankOf(k,"or"), sp: rankOf(k,"sp") };
+        }),
+        kwTotal: kwData.total || kwList.length,
+        mainKw: null, competitors: [], orders: trends.map(function(t){ return { date:t.date, orders:num(t.orders) || 0 }; }),
+        quota: quota ? { plan: quota.planName || "", monthlyRemain: (quota.monthly||{}).remaining, weeklyRemain: (quota.weekly||{}).remaining } : null
+      };
+      if (mainKw && kwInfo){
+        var aba = kwInfo.abaReport || {};
+        var topSelf = null; (aba.topAsins || []).forEach(function(a){ if (a.asin === asin) topSelf = a; });
+        r.mainKw = {
+          term: kwInfo.searchTerm || mainKw.searchTerm, zh: kwInfo.searchTermZh || mainKw.searchTermZh || "",
+          volume: num(aba.weeklySearchVolume), difficulty: num(kwInfo.competitiveDifficulty),
+          tier: kwInfo.competitiveDifficultyTier || "", cpc: num((kwInfo.costPerClick||{}).value),
+          clickShare: topSelf ? num(topSelf.clickShare) : null, convShare: topSelf ? num(topSelf.conversionShare) : null,
+          orRank: rankOf(mainKw, "or"), traffic: num(((mainKw.trafficSummary||{}).traffic||{}).total)
+        };
+      } else if (mainKw) {
+        r.mainKw = { term: mainKw.searchTerm, zh: mainKw.searchTermZh || "", volume:null, difficulty:null, tier:"", cpc:null, clickShare:null, convShare:null, orRank: rankOf(mainKw,"or"), traffic: num(((mainKw.trafficSummary||{}).traffic||{}).total) };
+      }
+      r.competitors = competitors.slice(0,10).map(function(c){
+        var ai = c.asinInfo || {};
+        return { asin:c.asin, price:num(ai.price), stars:num(ai.stars), ratings:num(ai.ratings), sales:num(c.sales), traffic:num(((c.trafficSummary||{}).traffic||{}).total) || 0, or: rankOf(c,"or"), self: c.asin === asin };
+      });
+      return r;
+    }
+
+    /* ---------- 评分：100 分制，规则固定 ---------- */
+    function band(v, table){ // table: [[threshold, points], ...] 从高到低
+      if (v === null || v === undefined) return 0;
+      for (var i=0;i<table.length;i++){ if (v >= table[i][0]) return table[i][1]; }
+      return table[table.length-1][1];
+    }
+    function bandLow(v, table){ // 越低越好
+      if (v === null || v === undefined) return 0;
+      for (var i=0;i<table.length;i++){ if (v <= table[i][0]) return table[i][1]; }
+      return table[table.length-1][1];
+    }
+    function scoreReport(r){
+      var dims = [], signals = [], risks = [];
+      /* 市场需求 30 */
+      var d1 = [];
+      var vol = r.mainKw ? r.mainKw.volume : null;
+      var pVol = band(vol, [[1000,12],[500,10],[200,8],[100,6],[50,4],[20,2],[1,1],[0,0]]);
+      d1.push({label:"主关键词周搜索量 " + (vol===null?"无数据":fmt(vol)), pts:pVol, max:12});
+      var pTraf = band(r.traffic.total, [[5000,8],[2000,7],[1000,6],[500,5],[200,3],[50,2],[1,1],[0,0]]);
+      d1.push({label:"近 7 天总流量 " + fmt(r.traffic.total), pts:pTraf, max:8});
+      var ordTotal = r.orders.reduce(function(s,o){ return s+o.orders; }, 0);
+      var pOrd = band(ordTotal, [[300,10],[150,8],[100,7],[50,5],[1,3],[0,0]]);
+      d1.push({label:"近 6 个月订单合计 " + fmt(ordTotal) + "（分档估算）", pts:pOrd, max:10});
+      dims.push({name:"市场需求", max:30, items:d1});
+      if (vol !== null && vol >= 100) signals.push("主关键词「" + r.mainKw.term + "」周搜索量 " + fmt(vol) + "，有真实搜索需求");
+      if (ordTotal >= 100) signals.push("近 6 个月订单合计约 " + fmt(ordTotal) + " 单，销量已被市场验证");
+      if (r.traffic.total !== null && r.traffic.total >= 1000) signals.push("近 7 天总流量 " + fmt(r.traffic.total) + "，类目流量池不小");
+      if (ordTotal === 0) risks.push("近 6 个月订单为 0，销量未经验证");
+      if (vol !== null && vol < 50) risks.push("主关键词周搜索量只有 " + fmt(vol) + "，需求盘子偏小");
+
+      /* 竞争强度 25（分越高越容易切入） */
+      var d2 = [];
+      var diff = r.mainKw ? r.mainKw.difficulty : null;
+      var pDiff = bandLow(diff, [[30,10],[45,8],[60,6],[70,4],[80,2],[999,1]]);
+      d2.push({label:"主关键词竞争难度 " + (diff===null?"无数据":diff + (r.mainKw.tier ? "（" + r.mainKw.tier + "）" : "")), pts:pDiff, max:10});
+      var headRatings = null;
+      r.competitors.forEach(function(c){ if (!c.self && c.ratings !== null && (headRatings === null || c.ratings > headRatings)) headRatings = c.ratings; });
+      var pHead = bandLow(headRatings, [[300,8],[1000,7],[3000,5],[8000,3],[999999999,2]]);
+      d2.push({label:"头部竞品最高评论数 " + (headRatings===null?"无数据":fmt(headRatings)), pts:pHead, max:8});
+      var orRank = r.mainKw ? r.mainKw.orRank : null;
+      var pRank = bandLow(orRank, [[1,7],[3,6],[10,4],[20,2],[999999,1]]);
+      d2.push({label:"本品在主关键词下自然排名 " + (orRank===null?"未上榜":("第 " + orRank)), pts:pRank, max:7});
+      dims.push({name:"竞争强度", max:25, items:d2});
+      if (diff !== null && diff <= 60) signals.push("主关键词竞争难度 " + diff + "，属于可切入区间");
+      if (orRank !== null && orRank <= 3) signals.push("本品在主关键词下自然排名第 " + orRank + "，已有自然权重");
+      if (r.mainKw && r.mainKw.clickShare !== null && r.mainKw.clickShare >= 0.15) signals.push("本品在主关键词下点击份额 " + pct(r.mainKw.clickShare,1) + "，转化份额 " + pct(r.mainKw.convShare,1));
+      if (headRatings !== null && headRatings >= 8000) risks.push("头部竞品评论数高达 " + fmt(headRatings) + "，评论壁垒很厚，新品难追赶");
+      if (diff !== null && diff > 70) risks.push("主关键词竞争难度 " + diff + "，切入成本高");
+
+      /* 价格带与费用 15 */
+      var d3 = [];
+      var prices = r.competitors.map(function(c){ return c.price; }).filter(function(p){ return p !== null; }).sort(function(a,b){ return a-b; });
+      var median = prices.length ? prices[Math.floor(prices.length/2)] : null;
+      var pPrice = 0, priceNote = "无竞品价格数据";
+      if (median !== null && r.info.price !== null){
+        var ratio = r.info.price / median;
+        pPrice = ratio <= 0.9 ? 5 : ratio <= 1.1 ? 6 : ratio <= 1.3 ? 3 : 1;
+        priceNote = "售价 " + money(r.info.price, r.info.currency) + "，竞品价中位数 " + money(median, r.info.currency);
+      }
+      d3.push({label:priceNote, pts:pPrice, max:6});
+      var feeRatio = null;
+      if (r.info.price && r.info.fbaFee !== null && r.info.referralRatio !== null)
+        feeRatio = (r.info.fbaFee + r.info.price * r.info.referralRatio) / r.info.price;
+      var pFee = bandLow(feeRatio, [[0.25,6],[0.30,5],[0.35,4],[0.40,3],[0.50,2],[9,1]]);
+      d3.push({label:"平台费用占比（FBA " + money(r.info.fbaFee, r.info.currency) + " + 佣金 " + pct(r.info.referralRatio,0) + "）" + (feeRatio===null?"无数据":("合计 " + pct(feeRatio,1))), pts:pFee, max:6});
+      var cpcRatio = (r.mainKw && r.mainKw.cpc !== null && r.info.price) ? r.mainKw.cpc / r.info.price : null;
+      var pCpc = bandLow(cpcRatio, [[0.06,3],[0.09,2],[0.12,1],[9,0]]);
+      d3.push({label:"主关键词 CPC " + (r.mainKw ? money(r.mainKw.cpc, r.info.currency) : "—") + (cpcRatio===null?"":"，占售价 " + pct(cpcRatio,1)), pts:pCpc, max:3});
+      dims.push({name:"价格带与费用", max:15, items:d3});
+      if (median !== null && r.info.price !== null && r.info.price < median) signals.push("售价低于竞品中位价 " + money(median, r.info.currency) + "，有价格优势");
+      if (feeRatio !== null && feeRatio > 0.35) risks.push("平台费用占售价 " + pct(feeRatio,1) + "，利润空间被 FBA 费和佣金吃掉较多");
+      if (cpcRatio !== null && cpcRatio > 0.09) risks.push("主关键词 CPC 占售价 " + pct(cpcRatio,1) + "，广告获客偏贵");
+
+      /* 流量健康度 15 */
+      var d4 = [];
+      var pOrg = band(r.traffic.organicRatio, [[0.8,6],[0.7,5],[0.6,4],[0.5,3],[0.3,2],[0,1]]);
+      d4.push({label:"自然流量占比 " + pct(r.traffic.organicRatio,1), pts:pOrg, max:6});
+      var pGrow = band(r.traffic.growth, [[0,5],[-0.10,4],[-0.20,3],[-0.35,2],[-9,1]]);
+      d4.push({label:"总流量环比 " + (r.traffic.growth===null?"—":((r.traffic.growth>=0?"+":"") + pct(r.traffic.growth,1))), pts:pGrow, max:5});
+      var pKw = band(r.traffic.organicTerms, [[50,4],[30,3],[15,2],[5,1],[0,0]]);
+      d4.push({label:"自然流量关键词数 " + fmt(r.traffic.organicTerms), pts:pKw, max:4});
+      dims.push({name:"流量健康度", max:15, items:d4});
+      if (r.traffic.organicRatio !== null && r.traffic.organicRatio >= 0.7) signals.push("自然流量占比 " + pct(r.traffic.organicRatio,1) + "，不依赖广告硬撑");
+      if (r.traffic.growth !== null && r.traffic.growth < -0.10) risks.push("近 7 天总流量环比 " + pct(r.traffic.growth,1) + "，流量在下滑");
+      if (r.traffic.organicRatio !== null && r.traffic.organicRatio < 0.4) risks.push("自然流量占比只有 " + pct(r.traffic.organicRatio,1) + "，流量主要靠广告买");
+
+      /* 产品成熟度 15 */
+      var d5 = [];
+      var pStars = band(r.info.stars, [[4.5,5],[4.3,4],[4.0,3],[3.5,2],[0,1]]);
+      d5.push({label:"评分 " + (r.info.stars===null?"—":r.info.stars), pts:pStars, max:5});
+      var pRev = band(r.info.ratings, [[100,5],[50,4],[20,3],[5,2],[0,1]]);
+      d5.push({label:"评论数 " + fmt(r.info.ratings), pts:pRev, max:5});
+      var ageMonths = null;
+      if (r.info.streetDate){ var sd = new Date(r.info.streetDate); if (!isNaN(sd)) ageMonths = (Date.now() - sd.getTime()) / (30.44*24*3600*1000); }
+      var pAge = band(ageMonths, [[12,5],[6,4],[3,3],[1,2],[0,1]]);
+      d5.push({label:"上架时长 " + (ageMonths===null?"无数据":("约 " + ageMonths.toFixed(1) + " 个月")), pts:pAge, max:5});
+      dims.push({name:"产品成熟度", max:15, items:d5});
+      if (r.info.stars !== null && r.info.stars >= 4.3) signals.push("评分 " + r.info.stars + "，产品口碑达标");
+      if (r.info.stars !== null && r.info.stars < 4.0) risks.push("评分只有 " + r.info.stars + "，口碑偏弱，跟卖或同款上架会被差评拖累");
+      if (ageMonths !== null && ageMonths < 3) risks.push("上架仅约 " + ageMonths.toFixed(1) + " 个月，数据样本还太新，结论稳定性差");
+
+      var total = dims.reduce(function(s,d){ return s + d.items.reduce(function(a,i){ return a+i.pts; },0); }, 0);
+      dims.forEach(function(d){ d.score = d.items.reduce(function(a,i){ return a+i.pts; },0); });
+      var verdict = total >= 65 ? {t:"值得尝试上架", cls:"g"} : total >= 45 ? {t:"谨慎尝试", cls:"w"} : {t:"不建议上架", cls:"b"};
+      return { total:total, verdict:verdict, dims:dims, signals:signals, risks:risks, ordTotal:ordTotal, median:median, feeRatio:feeRatio };
+    }
+
+    /* ---------- 渲染 ---------- */
+    function verdictDesc(v){
+      if (v.cls === "g") return "需求、竞争、费用和流量四项没有硬伤，可以小批量备货试上架，边卖边盯主关键词排名和流量环比。";
+      if (v.cls === "w") return "有机会但有明确短板（见下方风险提示），建议先小量测试或换个切入角度，不要重仓备货。";
+      return "硬伤明显：需求、竞争或费用至少一项不及格，现阶段不建议投入备货和广告。";
+    }
+    function renderReport(r){
+      var s = scoreReport(r);
+      var zone = $("reportZone");
+      var dimHtml = s.dims.map(function(d){
+        return '<div class="dim"><div class="top"><span>' + d.name + '</span><span class="pts">' + d.score + " / " + d.max + '</span></div>' +
+          '<div class="bar"><i style="width:' + Math.round(d.score/d.max*100) + '%"></i></div></div>';
+      }).join("");
+      var scoreDetail = s.dims.map(function(d){
+        var items = d.items.map(function(i){ return '<div class="scoreitem"><span>' + esc(i.label) + '</span><span>' + i.pts + " / " + i.max + "</span></div>"; }).join("");
+        return "<h3 style='margin-top:12px'>" + d.name + "（" + d.score + " / " + d.max + "）</h3>" + items;
+      }).join("");
+      var kwRows = r.keywords.map(function(k){
+        return "<tr><td><span class='kw'>" + esc(k.kw) + "</span>" + (k.zh ? "<div class='zh'>" + esc(k.zh) + "</div>" : "") + "</td>" +
+          '<td class="num">' + fmt(k.traffic) + '</td><td class="num">' + (k.or || "—") + '</td><td class="num">' + (k.sp || "—") + "</td></tr>";
+      }).join("");
+      var compRows = r.competitors.map(function(c){
+        return '<tr class="' + (c.self ? "self" : "") + '"><td class="mono" style="font-family:var(--mono);font-size:12px">' + esc(c.asin) + (c.self ? "（本品）" : "") + "</td>" +
+          '<td class="num">' + money(c.price, r.info.currency) + '</td><td class="num">' + (c.stars || "—") + '</td><td class="num">' + fmt(c.ratings) +
+          '</td><td class="num">' + fmt(c.sales) + '</td><td class="num">' + (c.or || "—") + "</td></tr>";
+      }).join("");
+      var maxOrd = Math.max.apply(null, r.orders.map(function(o){ return o.orders; }).concat([1]));
+      var chart = r.orders.map(function(o){
+        return '<div class="col"><div class="v">' + o.orders + '</div><div class="b" style="height:' + Math.max(3, Math.round(o.orders/maxOrd*64)) + 'px"></div><div class="m">' + esc(o.date.slice(2)) + "</div></div>";
+      }).join("");
+      var feeAbs = (r.info.price !== null && r.info.referralRatio !== null) ? r.info.price * r.info.referralRatio : null;
+      zone.innerHTML =
+      '<section class="card">' +
+        '<div class="verdict"><div class="gauge"><div class="num">' + s.total + '</div><div class="of">上架确定性 · 满分 100</div></div>' +
+        '<div><span class="vtag ' + s.verdict.cls + '">' + s.verdict.t + '</span><p class="vdesc">' + verdictDesc(s.verdict) + "</p>" +
+        '<p class="meta">' + esc(r.asin) + " · " + esc(r.country) + " 站 · " + (r.example ? "示例报告，西柚数据拉取于 2026-11-20" : "拉取于 " + esc(r.fetchedAt)) +
+        (r.quota ? " · 账户本月剩余 " + fmt(r.quota.monthlyRemain) + " Credit" : "") + "</p></div></div>" +
+        '<div class="dims">' + dimHtml + "</div>" +
+        "<details><summary>看每个维度的打分依据</summary>" + scoreDetail + "</details>" +
+      "</section>" +
+      '<div class="grid2">' +
+        '<section class="card"><h2>产品信息</h2>' +
+          "<p style='margin:0 0 8px;font-weight:600'>" + esc(r.info.title) + "</p>" +
+          '<dl class="kv">' +
+          "<dt>品牌</dt><dd>" + esc(r.info.brand || "—") + "</dd>" +
+          "<dt>售价</dt><dd>" + money(r.info.price, r.info.currency) + "</dd>" +
+          "<dt>评分 / 评论</dt><dd>" + (r.info.stars || "—") + " · " + fmt(r.info.ratings) + " 条</dd>" +
+          "<dt>类目</dt><dd>" + esc(r.info.category || "—") + "</dd>" +
+          "<dt>配送</dt><dd>" + esc(r.info.fulfillment || "—") + "</dd>" +
+          "<dt>FBA 费</dt><dd>" + money(r.info.fbaFee, r.info.currency) + "</dd>" +
+          "<dt>佣金</dt><dd>" + pct(r.info.referralRatio,0) + "（约 " + money(feeAbs, r.info.currency) + "）</dd>" +
+          "<dt>上架日期</dt><dd>" + esc(r.info.streetDate || "—") + "</dd>" +
+          "</dl>" +
+          (r.info.url ? '<p class="meta" style="margin-top:8px"><a href="' + esc(r.info.url) + '" target="_blank" rel="noopener">在 Amazon 查看这个产品</a></p>' : "") +
+        "</section>" +
+        '<section class="card"><h2>近 7 天流量</h2>' +
+          '<dl class="kv">' +
+          "<dt>总流量</dt><dd>" + fmt(r.traffic.total) + "</dd>" +
+          "<dt>自然流量</dt><dd>" + fmt(r.traffic.organic) + "（" + pct(r.traffic.organicRatio,1) + "）</dd>" +
+          "<dt>广告流量</dt><dd>" + fmt(r.traffic.ad) + "</dd>" +
+          "<dt>环比（上 7 天 " + fmt(r.traffic.prevTotal) + "）</dt><dd>" + (r.traffic.growth===null?"—":((r.traffic.growth>=0?"+":"") + pct(r.traffic.growth,1))) + "</dd>" +
+          "<dt>自然 / 广告关键词数</dt><dd>" + fmt(r.traffic.organicTerms) + " / " + fmt(r.traffic.adTerms) + "</dd>" +
+          "</dl>" +
+          (r.mainKw ? '<h3 style="margin-top:14px">主关键词：' + esc(r.mainKw.term) + (r.mainKw.zh ? ' <span class="zh">' + esc(r.mainKw.zh) + "</span>" : "") + "</h3>" +
+          '<dl class="kv">' +
+          "<dt>周搜索量</dt><dd>" + fmt(r.mainKw.volume) + "</dd>" +
+          "<dt>竞争难度</dt><dd>" + (r.mainKw.difficulty===null?"—":(r.mainKw.difficulty + (r.mainKw.tier ? "（" + esc(r.mainKw.tier) + "）" : ""))) + "</dd>" +
+          "<dt>建议 CPC</dt><dd>" + money(r.mainKw.cpc, r.info.currency) + "</dd>" +
+          "<dt>本品自然排名</dt><dd>" + (r.mainKw.orRank ? "第 " + r.mainKw.orRank : "未上榜") + "</dd>" +
+          "<dt>本品点击 / 转化份额</dt><dd>" + pct(r.mainKw.clickShare,1) + " / " + pct(r.mainKw.convShare,1) + "</dd>" +
+          "</dl>" : '<p class="meta">近 7 天没有反查到流量关键词。</p>') +
+        "</section>" +
+      "</div>" +
+      '<div class="grid2">' +
+        '<section class="card"><h2>支持信号</h2>' + (s.signals.length ? '<ul class="sig">' + s.signals.map(function(x){ return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : '<p class="meta">没有达到阈值的支持信号。</p>') + "</section>" +
+        '<section class="card"><h2>风险提示</h2>' + (s.risks.length ? '<ul class="risk">' + s.risks.map(function(x){ return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>" : '<p class="meta">没有触发风险阈值。</p>') + "</section>" +
+      "</div>" +
+      '<section class="card"><h2>近 6 个月订单趋势（西柚分档估算）</h2><div class="chart">' + chart + "</div></section>" +
+      '<div class="grid2">' +
+        '<section class="card"><h2>反查关键词 Top ' + r.keywords.length + "（近 7 天，共 " + fmt(r.kwTotal) + " 个）</h2>" +
+          (kwRows ? '<table><thead><tr><th>关键词</th><th class="num">流量</th><th class="num">自然排名</th><th class="num">广告排名</th></tr></thead><tbody>' + kwRows + "</tbody></table>" : '<p class="meta">无数据。</p>') +
+        "</section>" +
+        '<section class="card"><h2>主关键词下竞品（近 7 天）</h2>' +
+          (compRows ? '<table><thead><tr><th>ASIN</th><th class="num">售价</th><th class="num">评分</th><th class="num">评论</th><th class="num">30天销量</th><th class="num">自然排名</th></tr></thead><tbody>' + compRows + "</tbody></table>" : '<p class="meta">无数据。</p>') +
+        "</section>" +
+      "</div>";
+    }
+
+    function renderHistory(){
+      var h = $("hist");
+      if (!reports.length){ h.innerHTML = '<p class="meta">还没有报告。</p>'; return; }
+      h.innerHTML = reports.map(function(r){
+        var s = scoreReport(r);
+        return '<div class="hrow"><div class="grow"><b style="font-family:var(--mono)">' + esc(r.asin) + "</b> · " + esc(r.country) + " 站" +
+          (r.example ? ' <span class="pill ex">示例</span>' : "") + '<div class="meta">' + esc(r.info.title || "") + " · " + (r.example ? "2026-11-20" : esc(r.fetchedAt)) + "</div></div>" +
+          '<span class="score">' + s.total + '</span><span class="pill ' + s.verdict.cls + '">' + s.verdict.t + "</span>" +
+          '<button class="btn small ghost" data-view="' + r.id + '" type="button">查看</button>' +
+          '<button class="btn small danger" data-del="' + r.id + '" type="button">删除</button></div>';
+      }).join("");
+      h.querySelectorAll("[data-view]").forEach(function(b){ b.addEventListener("click", function(){
+        var r = reports.filter(function(x){ return x.id === b.getAttribute("data-view"); })[0];
+        if (r){ currentId = r.id; renderReport(r); window.scrollTo({ top: $("reportZone").offsetTop - 10, behavior:"smooth" }); }
+      }); });
+      h.querySelectorAll("[data-del]").forEach(function(b){ b.addEventListener("click", function(){
+        var id = b.getAttribute("data-del");
+        reports = reports.filter(function(x){ return x.id !== id; });
+        if (currentId === id){ currentId = reports.length ? reports[0].id : null; if (reports.length) renderReport(reports[0]); else $("reportZone").innerHTML = ""; }
+        renderHistory();
+      }); });
+    }
+
+    /* ---------- 示例报告：B0GXHZZGY5 意大利站，2026-11-20 经西柚洞察实拉 ---------- */
+    var example = {
+      id:"example-1", example:true, asin:"B0GXHZZGY5", country:"IT", fetchedAt:"2026-11-20",
+      info:{ title:"90W Caricatore Universale Portatil 20V Max per Laptop (Senza USB-C)", brand:"GALECHE", price:18.9, currency:"EUR",
+        stars:4.4, ratings:55, fbaFee:3.66, referralRatio:0.15, fulfillment:"FBA", category:"笔记本电脑充电器与电源适配器",
+        streetDate:"2026-06-30", url:"https://www.amazon.it/dp/B0GXHZZGY5" },
+      traffic:{ total:2079, organic:1798, ad:281, organicRatio:0.8648, growth:-0.1161, prevTotal:2352, organicTerms:58, adTerms:8 },
+      keywords:[
+        {kw:"alimentatore universale", zh:"通用电源适配器", traffic:259, or:6, sp:null},
+        {kw:"alimentatore universale notebook", zh:"通用笔记本电脑电源适配器", traffic:230, or:1, sp:2},
+        {kw:"caricatore pc", zh:"电脑充电器", traffic:156, or:5, sp:12},
+        {kw:"caricatore lenovo pc portatile", zh:"联想笔记本电脑充电器", traffic:138, or:44, sp:20},
+        {kw:"caricatore universale", zh:"通用充电器", traffic:126, or:10, sp:null},
+        {kw:"alimentatore pc", zh:"电脑电源", traffic:112, or:97, sp:null},
+        {kw:"caricatore portatile", zh:"便携式充电器", traffic:108, or:137, sp:null},
+        {kw:"caricatore pc hp portatile", zh:"惠普笔记本电脑充电器", traffic:104, or:23, sp:null},
+        {kw:"caricabatterie lenovo pc portatile", zh:"联想笔记本电脑充电器", traffic:86, or:32, sp:21},
+        {kw:"caricabatterie universale", zh:"通用充电器", traffic:68, or:12, sp:null}
+      ],
+      kwTotal:59,
+      mainKw:{ term:"alimentatore universale notebook", zh:"通用笔记本电脑电源适配器", volume:124, difficulty:57, tier:"easy",
+        cpc:1.68, clickShare:0.227, convShare:0.5, orRank:1, traffic:230 },
+      competitors:[
+        {asin:"B0F387KD4B", price:25.99, stars:4.4, ratings:2759, sales:300, traffic:255, or:7, self:false},
+        {asin:"B0DQ75MB9L", price:19.99, stars:4.6, ratings:118, sales:50, traffic:234, or:9, self:false},
+        {asin:"B0GXHZZGY5", price:18.9, stars:4.4, ratings:55, sales:200, traffic:230, or:1, self:true},
+        {asin:"B007HXN064", price:29.99, stars:4.4, ratings:11029, sales:100, traffic:187, or:6, self:false},
+        {asin:"B0BY27YDRL", price:21.99, stars:4.3, ratings:2557, sales:0, traffic:163, or:23, self:false},
+        {asin:"B0H4LJ6ND8", price:17.7, stars:4.2, ratings:19, sales:100, traffic:134, or:14, self:false},
+        {asin:"B08KW98B32", price:22.9, stars:4.5, ratings:160, sales:100, traffic:120, or:4, self:false},
+        {asin:"B089XB3LRJ", price:23.9, stars:4.0, ratings:128, sales:0, traffic:111, or:21, self:false}
+      ],
+      orders:[{date:"2026-05",orders:0},{date:"2026-06",orders:0},{date:"2026-07",orders:0},{date:"2026-08",orders:0},{date:"2026-09",orders:100},{date:"2026-10",orders:100}],
+      quota:null
+    };
+    reports.push(example); currentId = example.id;
+    var saved = loadToken(); if (saved) $("token").value = saved;
+    renderHistory(); renderReport(example);
+    </script>
+  </body>
+</html>
