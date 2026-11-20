@@ -110,7 +110,7 @@
   <body>
     <main class="wrap">
       <h1>单 ASIN 市场分析</h1>
-      <p class="lede">填入你自己的西柚洞察 MCP Token，输入一个 ASIN 和站点，页面直接连西柚洞察拉产品、流量、关键词、竞品和订单数据，按 100 分制算出「能不能尝试上架」的确定性。</p>
+      <p class="lede">填入你自己的西柚洞察 MCP Token，输入一个 ASIN 和站点，页面连西柚洞察拉产品、流量、关键词、竞品和订单数据，按 100 分制算出「能不能尝试上架」的确定性。西柚接口未开放浏览器跨域时直连会被拦，此时需改走你自己的中转地址（见下方连接方式），Token 只发给西柚或你自己的中转，不经过任何公共代理。</p>
 
       <section class="card" aria-labelledby="tok-h">
         <h2 id="tok-h">1 · 西柚洞察 MCP Token</h2>
@@ -125,6 +125,49 @@
         </div>
         <p class="hint">Token 只保存在这台设备的浏览器本地（localStorage），不上传、不共享、不会写进页面代码。换电脑或换浏览器需要重新填一次。填入你自己的 Token 后即可开始分析。</p>
         <p class="tokstatus" id="tokStatus" role="status"></p>
+        <div style="border-top:1px dashed var(--line);margin-top:14px;padding-top:14px">
+          <h3 style="font-size:14px">连接方式（连不上时先看这里）</h3>
+          <p class="hint" style="margin:0 0 10px">西柚接口 <span style="font-family:var(--mono)">mcp.xydc.com</span> 没有开放浏览器跨域，网页直连会被浏览器拦下，表现就是「连不上西柚洞察接口」。这不是 Token 错，也不是你网络坏了。解决办法是走你自己的中转：用你自己的 Supabase Edge Function 或 Cloudflare Worker 转发请求，Token 只发给西柚和你自己的中转，不经过任何第三方公共代理。选「自动」时先试直连，不通再试你已填的中转地址。</p>
+          <div class="row">
+            <div>
+              <label for="connMode">连接通道</label>
+              <select id="connMode">
+                <option value="auto">自动（先直连，不通走我的中转）</option>
+                <option value="direct">只直连西柚</option>
+                <option value="custom">只走我自己的中转地址</option>
+              </select>
+            </div>
+            <div style="flex:0 0 auto;display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap">
+              <button class="btn small ghost" id="diagBtn" type="button">诊断连接</button>
+            </div>
+          </div>
+          <div id="customProxyBox" style="margin-top:10px">
+            <label for="customProxy">我的中转地址（你自己的 Supabase Edge Function / Cloudflare Worker 转发地址）</label>
+            <input type="text" id="customProxy" class="mono" placeholder="例如 https://你的项目.supabase.co/functions/v1/xydc-proxy" autocomplete="off" />
+            <p class="hint">填你自己部署的中转完整地址，页面会直接向这个地址发 MCP 请求，由它转发到西柚。地址里可写 <span style="font-family:var(--mono)">{url}</span> 作为西柚地址占位符；不写占位符就按完整中转地址直接请求。只保存在本机浏览器。还没部署中转时先留空，并按下方说明部署一个。</p>
+          </div>
+          <p class="hint" style="margin-top:8px">为什么不用公共代理：公共代理会经手你的 Token，等于把西柚账号凭证交给陌生服务器，不能用。本页只保留两条路：直连西柚，或走你自己的中转。诊断会逐条试当前通道并告诉你哪条通、哪条不通。</p>
+          <details>
+            <summary>怎么部署我自己的中转（Supabase，约 5 分钟）</summary>
+            <ol style="margin:6px 0;padding-left:20px;font-size:13.5px">
+              <li style="margin-bottom:5px">打开 supabase.com 建一个免费项目，进 <b>Edge Functions</b>，新建函数，名字填 <span style="font-family:var(--mono)">xydc-proxy</span>。</li>
+              <li style="margin-bottom:5px">把函数代码换成下面这段并 Deploy。这段代码只做一件事：把页面发来的请求原样转发到西柚，并补上跨域头；Token 由页面带入，代码里不写任何 Token。</li>
+            </ol>
+            <pre style="background:var(--surface2);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0 0 8px">const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, content-type, mcp-session-id, mcp-protocol-version", "Access-Control-Allow-Methods": "POST, OPTIONS", "Access-Control-Expose-Headers": "mcp-session-id" };
+Deno.serve(async (req) =&gt; {
+  if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
+  const r = await fetch("https://mcp.xydc.com/mcp", { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json, text/event-stream", "Authorization": req.headers.get("Authorization") || "", "MCP-Protocol-Version": req.headers.get("MCP-Protocol-Version") || "2025-11-25", ...(req.headers.get("Mcp-Session-Id") ? { "Mcp-Session-Id": req.headers.get("Mcp-Session-Id") } : {}) }, body: await req.text() });
+  const h = new Headers(CORS); h.set("Content-Type", r.headers.get("Content-Type") || "application/json"); const sid = r.headers.get("Mcp-Session-Id"); if (sid) h.set("Mcp-Session-Id", sid);
+  return new Response(await r.text(), { status: r.status, headers: h });
+});</pre>
+            <ol start="3" style="margin:6px 0;padding-left:20px;font-size:13.5px">
+              <li style="margin-bottom:5px">部署后函数地址形如 <span style="font-family:var(--mono)">https://你的项目.supabase.co/functions/v1/xydc-proxy</span>，把它填到上面「我的中转地址」，通道选「只走我自己的中转地址」，点「诊断连接」显示能连通后就能正常分析了。函数的 Verify JWT 要关掉（页面请求不带 Supabase 登录凭证）。</li>
+              <li>Cloudflare Worker 同理：新建 Worker，用同样的转发逻辑部署，把 Worker 地址填进来即可。</li>
+            </ol>
+          </details>
+          <p class="tokstatus" id="diagStatus" role="status"></p>
+          <div id="diagList" class="hidden" style="font-size:13px;margin-top:4px"></div>
+        </div>
       </section>
 
       <section class="card" aria-labelledby="an-h">
@@ -175,6 +218,23 @@
         <div class="hist" id="hist"></div>
       </section>
 
+      <section class="card" aria-labelledby="export-h">
+        <h2 id="export-h">导出 HTML 文件 · 打不开怎么办</h2>
+        <p style="margin:0 0 10px">是的，这个页面本身就是一个 <b>HTML 文件</b>，文件名必须是 <b style="font-family:var(--mono)">index.html</b>，只有一个文件，不需要其他文件。点下面按钮就能下载一份干净的 <span style="font-family:var(--mono)">index.html</span>，可以双击用浏览器打开，也可以传到 GitHub / Vercel 部署。</p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <button class="btn" id="dlHtml" type="button">下载 index.html</button>
+          <span class="hint" style="margin:0;align-self:center">下载后请确认文件名结尾是 .html，不是 .txt，也不是没有后缀。</span>
+        </div>
+        <h3>双击打不开 / 打开是乱码或代码，按顺序查这 4 点：</h3>
+        <ol style="margin:6px 0 10px;padding-left:20px;font-size:14px">
+          <li style="margin-bottom:6px"><b>文件名不对（最常见）：</b>如果文件叫 <span style="font-family:var(--mono)">index</span>、<span style="font-family:var(--mono)">index.html.txt</span> 或 <span style="font-family:var(--mono)">单ASIN市场分析</span>，双击就打不开。把它重命名为 <b style="font-family:var(--mono)">index.html</b>。Windows 要先在文件资源管理器点「查看 → 显示 → 文件扩展名」，才能看到并改对后缀。</li>
+          <li style="margin-bottom:6px"><b>打开方式不对：</b>不要用记事本、Word 打开。右键文件 → <b>打开方式 → 选择 Chrome 或 Edge</b>。打开后地址栏是 <span style="font-family:var(--mono)">file:///…/index.html</span>，看到和本页一样的界面就是打开成功了。</li>
+          <li style="margin-bottom:6px"><b>在 GitHub 里点开看到的是代码：</b>这是正常的。GitHub 只是存文件的地方，点 <span style="font-family:var(--mono)">index.html</span> 只会显示代码，不会变成网站。真正的网站地址是 Vercel 给的 <span style="font-family:var(--mono)">https://xxx.vercel.app</span>，要用那个链接打开。</li>
+          <li><b>点「测试连接 / 开始分析」报连不上西柚：</b>这是西柚接口未开放跨域、浏览器直连被拦，和文件、Token 无关。解决办法只有走你自己的中转：部署一个你自己的 Supabase Edge Function 或 Cloudflare Worker 转发到西柚，把地址填到 Token 区下面的「我的中转地址」，再点「诊断连接」确认中转能通。不要用网上公共代理转发 Token，等于把凭证交给陌生服务器。本地 <span style="font-family:var(--mono)">file://</span> 和部署后的 <span style="font-family:var(--mono)">https://</span> 都会遇到同样的跨域问题，区别不在打开方式。</li>
+        </ol>
+        <p class="hint" style="margin:0">手机上：不要直接在微信里点文件预览，先下载后用 Chrome / Safari 打开，或直接打开 Vercel 的 https 链接使用。</p>
+      </section>
+
       <footer>评分规则固定：市场需求 30 + 竞争强度 25 + 价格带与费用 15 + 流量健康度 15 + 产品成熟度 15 = 100 分；≥65 值得尝试上架，45–64 谨慎尝试，&lt;45 不建议上架。数据全部来自西柚洞察接口返回，拉不到就报错，不补数。订单量为西柚分档估算值，与自家店铺后台数据不一致时以店铺后台为准。</footer>
     </main>
     <script>
@@ -217,9 +277,30 @@
       try { localStorage.removeItem(LS_REPORTS_KEY); localStorage.removeItem(LS_CURRENT_KEY); } catch(e){}
     }
 
-    /* ---------- MCP 客户端（浏览器直连，Streamable HTTP + JSON-RPC） ---------- */
+    /* ---------- 连接通道：直连西柚 + 用户自己的中转（二选一，不经任何公共代理） ---------- */
+    var LS_MODE_KEY = "xydc_conn_mode";
+    var LS_PROXY_KEY = "xydc_custom_proxy";
+    function getConnMode(){ var v = ($("connMode") && $("connMode").value) || ""; if (!v){ try { v = localStorage.getItem(LS_MODE_KEY) || "auto"; } catch(e){ v = "auto"; } } if (v !== "direct" && v !== "custom") v = "auto"; return v; }
+    function getCustomProxy(){ var v = ($("customProxy") && $("customProxy").value || "").trim(); if (v) return v; try { return localStorage.getItem(LS_PROXY_KEY) || ""; } catch(e){ return ""; } }
+    function resolveCustomUrl(){
+      var c = getCustomProxy(); if (!c) return null;
+      if (c.indexOf("{url}") >= 0) return c.split("{url}").join(encodeURIComponent(MCP_URL));
+      return c;
+    }
+    function getRoutes(){
+      var mode = getConnMode();
+      var direct = { id:"direct", label:"直连 mcp.xydc.com", url:MCP_URL };
+      var cu = resolveCustomUrl();
+      var custom = cu ? { id:"custom", label:"我的中转地址", url:cu } : null;
+      if (mode === "direct") return [direct];
+      if (mode === "custom") return custom ? [custom] : [];
+      // auto：直连优先，已填自有中转时直连不通自动改走中转；Token 只发给西柚或用户自己的中转
+      return custom ? [direct, custom] : [direct];
+    }
+
+    /* ---------- MCP 客户端（Streamable HTTP + JSON-RPC，经当前通道请求） ---------- */
     function McpError(kind, msg){ this.kind = kind; this.message = msg; }
-    function newSession(){ return { id:null, seq:0, protocol:"2025-11-25" }; }
+    function newSession(){ return { id:null, seq:0, protocol:"2025-11-25", routeUrl:null, routeLabel:"" }; }
 
     function parseMcpBody(text, contentType, wantId){
       if (contentType && contentType.indexOf("text/event-stream") >= 0){
@@ -238,7 +319,7 @@
       try { return JSON.parse(text); } catch(e){ return null; }
     }
 
-    async function mcpSend(session, token, method, params, isNotification){
+    async function mcpSend(session, token, method, params, isNotification, timeoutMs){
       session.seq += 1;
       var id = isNotification ? null : session.seq;
       var body = { jsonrpc:"2.0", method:method, params:params || {} };
@@ -250,15 +331,17 @@
         "MCP-Protocol-Version": session.protocol
       };
       if (session.id) headers["Mcp-Session-Id"] = session.id;
+      var targetUrl = session.routeUrl || MCP_URL;
       var ctrl = new AbortController();
-      var timer = setTimeout(function(){ ctrl.abort(); }, 90000);
+      var limit = timeoutMs || 90000;
+      var timer = setTimeout(function(){ ctrl.abort(); }, limit);
       var resp;
       try {
-        resp = await fetch(MCP_URL, { method:"POST", headers:headers, body:JSON.stringify(body), signal:ctrl.signal, redirect:"error" });
+        resp = await fetch(targetUrl, { method:"POST", headers:headers, body:JSON.stringify(body), signal:ctrl.signal });
       } catch(e) {
         clearTimeout(timer);
-        if (e && e.name === "AbortError") throw new McpError("timeout", "请求超时（90 秒），西柚接口没有在规定时间内响应。");
-        throw new McpError("network", "连不上西柚洞察接口（https://mcp.xydc.com/mcp）。多半是浏览器跨域限制、网络不通或接口临时不可用，本次没有拿到任何数据。");
+        if (e && e.name === "AbortError") throw new McpError("timeout", "请求超时（" + Math.round(limit/1000) + " 秒），通道「" + (session.routeLabel || "直连") + "」没有在规定时间内响应。");
+        throw new McpError("network", "通道「" + (session.routeLabel || "直连") + "」连不上：浏览器拦截或网络不通（直连多半是西柚未开放跨域）。本次没有拿到任何数据。");
       }
       clearTimeout(timer);
       var sid = resp.headers.get("Mcp-Session-Id");
@@ -276,13 +359,39 @@
       return msg.result;
     }
 
-    async function mcpInit(session, token){
+    async function mcpInitOnRoute(session, token, route){
+      session.routeUrl = route.url; session.routeLabel = route.label;
       var r = await mcpSend(session, token, "initialize", {
         protocolVersion: session.protocol, capabilities:{},
         clientInfo:{ name:"asin-market-web", version:"1" }
-      });
+      }, false, 25000);
       if (r && r.protocolVersion) session.protocol = r.protocolVersion;
-      await mcpSend(session, token, "notifications/initialized", {}, true);
+      await mcpSend(session, token, "notifications/initialized", {}, true, 25000);
+    }
+    // 依次试每条通道，哪条先连通就锁定用哪条完成整次会话（保证 Session 不串）
+    async function mcpInit(session, token, onTry){
+      var routes = getRoutes();
+      var mode = getConnMode();
+      if (mode === "custom" && !getCustomProxy()){
+        throw new McpError("config", "你选了「用我自己的中转地址」，但中转地址还没填。先填入你自己的 Supabase / Cloudflare 中转地址，或把连接通道改回「自动切换」。");
+      }
+      var errors = [];
+      for (var i=0;i<routes.length;i++){
+        var route = routes[i];
+        if (onTry) onTry(route, i, routes.length);
+        var trial = newSession();
+        try {
+          await mcpInitOnRoute(trial, token, route);
+          session.id = trial.id; session.seq = trial.seq; session.protocol = trial.protocol;
+          session.routeUrl = trial.routeUrl; session.routeLabel = trial.routeLabel;
+          return route;
+        } catch(e){
+          errors.push(route.label + "：" + (e.message || e));
+          // Token 本身无效时换通道也没用，直接报错，不再浪费额度
+          if (e && e.kind === "auth") throw e;
+        }
+      }
+      throw new McpError("network", "所有通道都连不上西柚，本次没有拿到任何数据。已试：" + errors.join("；") + "。直连失败基本就是西柚未开放浏览器跨域。处理办法：①部署你自己的中转（Supabase Edge Function 或 Cloudflare Worker 转发到 https://mcp.xydc.com/mcp），把地址填到上方「我的中转地址」，通道选「自动」或「只走我自己的中转地址」再试；②点上方「诊断连接」确认直连与中转各自结果；③不要用网上公共代理转发 Token，不安全。");
     }
 
     async function callTool(session, token, name, args){
@@ -316,17 +425,58 @@
     function showBanner(html){ var b = $("banner"); b.innerHTML = html; b.className = "banner error show"; }
     function hideBanner(){ $("banner").className = "banner error"; $("banner").innerHTML = ""; }
 
+    /* ---------- 连接方式：保存选择 + 自定义地址显隐 ---------- */
+    function syncProxyBox(){
+      var box = $("customProxyBox"); if (!box) return;
+      box.classList.remove("hidden"); // 中转地址始终可见，方便直连不通时直接填入
+    }
+    (function initConnUI(){
+      var modeEl = $("connMode"), pxEl = $("customProxy");
+      try { var sm = localStorage.getItem(LS_MODE_KEY); if (sm && modeEl) modeEl.value = sm; } catch(e){}
+      try { var sp = localStorage.getItem(LS_PROXY_KEY); if (sp && pxEl) pxEl.value = sp; } catch(e){}
+      if (modeEl) modeEl.addEventListener("change", function(){ try { localStorage.setItem(LS_MODE_KEY, modeEl.value); } catch(e){} syncProxyBox(); $("diagStatus").innerHTML = ""; $("diagList").classList.add("hidden"); });
+      if (pxEl) pxEl.addEventListener("change", function(){ try { localStorage.setItem(LS_PROXY_KEY, pxEl.value.trim()); } catch(e){} });
+      syncProxyBox();
+    })();
+
+    /* ---------- 诊断连接：逐条通道单独试 ---------- */
+    $("diagBtn").addEventListener("click", async function(){
+      var t = getToken(), st = $("diagStatus"), list = $("diagList");
+      if (!t){ st.innerHTML = '<span class="err">先粘贴 Token 再诊断（诊断需要带 Token 试连）。</span>'; return; }
+      var btn = $("diagBtn"); btn.disabled = true; btn.textContent = "诊断中…";
+      st.textContent = "正在逐条试通道，每条最多等 25 秒…"; list.classList.remove("hidden"); list.innerHTML = "";
+      var routes = getRoutes(); var anyOk = false;
+      for (var i=0;i<routes.length;i++){
+        var route = routes[i];
+        var row = document.createElement("div");
+        row.style.cssText = "padding:6px 0;border-bottom:1px dashed var(--line)";
+        row.innerHTML = "<b>" + esc(route.label) + "</b>：试连中…";
+        list.appendChild(row);
+        var trial = newSession();
+        try {
+          await mcpInitOnRoute(trial, t, route);
+          anyOk = true;
+          row.innerHTML = "<b>" + esc(route.label) + '</b>：<span class="ok">能连通 ✓</span> 用这条就能分析。';
+        } catch(e){
+          row.innerHTML = "<b>" + esc(route.label) + '</b>：<span class="err">不通 ✗</span> ' + esc(e.message || e);
+        }
+      }
+      st.innerHTML = anyOk ? '<span class="ok">诊断完成：至少有一条通道能连通，保持当前连接方式直接点「开始分析」即可，页面会自动用通的那条。</span>' : '<span class="err">诊断完成：当前所有通道都不通。换网络再试，或改用你自己的中转地址（最稳）。</span>';
+      btn.disabled = false; btn.textContent = "诊断连接";
+    });
+
     /* ---------- 测试连接 ---------- */
     $("testTok").addEventListener("click", async function(){
       var t = getToken(), st = $("tokStatus");
       if (!t){ st.innerHTML = '<span class="err">先粘贴 Token 再测试。</span>'; return; }
-      st.textContent = "正在连接西柚洞察…";
+      st.textContent = "正在连接西柚洞察（直连不通会自动改走你已填的中转地址）…";
       try {
-        var s = newSession(); await mcpInit(s, t);
+        var s = newSession();
+        var used = await mcpInit(s, t, function(route){ st.textContent = "正在试通道：" + route.label + "…"; });
         var q = await callTool(s, t, "get_account_credit_quota", { user_task:"测试西柚洞察 MCP 连接", intent_summary:"查询账户额度，验证 Token 可用" });
         var d = q.data || q;
         var mo = d.monthly || {}, wk = d.weekly || {};
-        st.innerHTML = '<span class="ok">连接成功。</span> 套餐 ' + esc(d.planName || "—") +
+        st.innerHTML = '<span class="ok">连接成功（通道：' + esc(used.label) + '）。</span> 套餐 ' + esc(d.planName || "—") +
           "，本月剩余 " + fmt(mo.remaining !== undefined ? mo.remaining : mo.remain) + " Credit，本周剩余 " + fmt(wk.remaining !== undefined ? wk.remaining : wk.remain) + " Credit。";
       } catch(e){ st.innerHTML = '<span class="err">连接失败：' + esc(e.message || e) + "</span>"; }
     });
@@ -353,7 +503,8 @@
       var UT = "分析 ASIN " + asin + " " + country + " 站的市场数据，判断是否值得尝试上架销售";
       var session = newSession();
       try {
-        await mcpInit(session, token);
+        await mcpInit(session, token, function(route){ btn.textContent = "连接中：" + route.label + "…"; });
+        btn.textContent = "分析中（通道：" + session.routeLabel + "）…";
         setStep("quota","run");
         var quota = null;
         try { var q = await callTool(session, token, "get_account_credit_quota", { user_task:UT, intent_summary:"查询剩余额度" }); quota = q.data || q; } catch(e){ /* 额度查不到不阻断分析 */ }
@@ -683,6 +834,31 @@
     /* ---------- 清空全部记录（同时清除本机保存） ---------- */
     $("clearHist").addEventListener("click", function(){
       reports = []; currentId = null; $("reportZone").innerHTML = ""; clearSavedReports(); renderHistory();
+    });
+
+    /* ---------- 下载当前页为独立 index.html ---------- */
+    var dlBtn = $("dlHtml");
+    if (dlBtn) dlBtn.addEventListener("click", function(){
+      try {
+        var clone = document.documentElement.cloneNode(true);
+        // 下载的副本不带当前输入的 Token 和已渲染的报告，保持干净空白
+        var tok = clone.querySelector("#token"); if (tok){ tok.removeAttribute("value"); tok.value = ""; }
+        var rz = clone.querySelector("#reportZone"); if (rz) rz.innerHTML = "";
+        var hs = clone.querySelector("#hist"); if (hs) hs.innerHTML = "";
+        var as = clone.querySelector("#asin"); if (as){ as.removeAttribute("value"); as.value = ""; }
+        var bn = clone.querySelector("#banner"); if (bn){ bn.innerHTML = ""; bn.className = "banner error"; }
+        var ts = clone.querySelector("#tokStatus"); if (ts) ts.innerHTML = "";
+        var cp = clone.querySelector("#customProxy"); if (cp){ cp.removeAttribute("value"); cp.value = ""; }
+        var ds = clone.querySelector("#diagStatus"); if (ds) ds.innerHTML = "";
+        var dl2 = clone.querySelector("#diagList"); if (dl2){ dl2.innerHTML = ""; dl2.className = "hidden"; }
+        var html = "<!doctype html>\n" + clone.outerHTML;
+        var blob = new Blob([html], { type: "text/html;charset=utf-8" });
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement("a");
+        a.href = url; a.download = "index.html";
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+      } catch(e){ showBanner("<b>下载失败：</b>浏览器拦住了下载，请改用部署后的 https 链接打开本页再点下载，或在电脑端 Chrome 里重试。"); }
     });
 
     /* ---------- 初始化：恢复本机保存的 Token 与历史报告 ---------- */
