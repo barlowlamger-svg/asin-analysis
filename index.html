@@ -123,7 +123,8 @@
             <button class="btn small danger" id="clearTok" type="button">清除</button>
           </div>
         </div>
-        <p class="hint">Token 只保存在这台设备的浏览器本地（localStorage），不上传、不共享、不会写进页面代码。换电脑或换浏览器需要重新填一次。填入你自己的 Token 后即可开始分析。</p>
+        <p class="hint">Token 只保存在这台设备的浏览器本地（localStorage），不上传、不共享、不会写进页面代码。换电脑或换浏览器需要重新填一次。填入你自己的 Token 后即可开始分析。<b>本页会自动清洗 Token 格式：</b>粘贴时带了首尾空格、换行、引号，或前面多了 <span style="font-family:var(--mono)">Bearer</span>，都会自动去掉再发送，不会因为多一个空格就被西柚判为查不到。保存 / 测试 / 诊断时下方会显示清洗后 Token 的长度和首尾掩码，方便你核对实际传过去的到底是哪一串（不会显示完整 Token）。</p>
+        <p class="hint" id="tokFingerprint" style="font-family:var(--mono);word-break:break-all"></p>
         <p class="tokstatus" id="tokStatus" role="status"></p>
         <div style="border-top:1px dashed var(--line);margin-top:14px;padding-top:14px">
           <h3 style="font-size:14px">连接方式（连不上时先看这里）</h3>
@@ -137,7 +138,8 @@
             <b>两种 401 怎么分（诊断和报错会自动帮你分）：</b>
             <ul style="margin:6px 0 0;padding-left:18px">
               <li style="margin-bottom:4px"><b>Supabase 拦的 401：</b>返回里带 <span style="font-family:var(--mono)">UNAUTHORIZED_NO_AUTH_HEADER</span> / <span style="font-family:var(--mono)">Invalid JWT</span> / <span style="font-family:var(--mono)">Missing authorization header</span> 这类字样。意思是西柚没收到请求，按上面双头方案处理，或关掉 Verify JWT 后重新部署。</li>
-              <li><b>西柚返回的 401：</b>请求已经过了 Supabase、到了西柚，是西柚不认这个 Token。这时才需要去 platform.xydc.com 凭证管理重新复制 MCP Token。</li>
+              <li style="margin-bottom:4px"><b>西柚返回的 401 / <span style="font-family:var(--mono)">mcp token credential not found</span>：</b>请求已经过了 Supabase、到了西柚，是西柚按这串字符查不到凭证。本页和新版中转现在都会先自动清洗 Token（去首尾空格、换行、引号，统一 Bearer 前缀，去掉所有空白字符）再发送，所以不要再怀疑是多复制了一个空格——诊断会直接显示清洗后 Token 的<b>长度和首尾掩码</b>，拿它和凭证管理里最新 Token 对长度，对不上就是粘的不是最新那一个或登错了账号。</li>
+              <li><b>先看指纹再换 Token：</b>点「诊断连接」后，每条通道结果上方会先列出本次实际发送的 Token 指纹和 Publishable Key 指纹。截图发人排查时只发指纹，不要发完整 Token。</li>
             </ul>
           </div>
           <div class="row">
@@ -165,39 +167,60 @@
           </div>
           <p class="hint" style="margin-top:8px">为什么不用公共代理：公共代理会经手你的 Token，等于把西柚账号凭证交给陌生服务器，不能用。本页只保留两条路：直连西柚，或走你自己的中转。诊断会逐条试当前通道并告诉你哪条通、哪条不通。</p>
           <details>
-            <summary>怎么部署 / 更新 Supabase 中转（新版双头代码，约 5 分钟）</summary>
-            <p style="font-size:13.5px;margin:8px 0"><b>已经部署过旧版函数的，必须更新：</b>旧版函数只读 <span style="font-family:var(--mono)">Authorization</span> 头，新版页面把西柚 Token 放在 <span style="font-family:var(--mono)">X-Xydc-Authorization</span> 里，旧函数读不到就会继续 401。把函数代码整段换成下面新版，重新 Deploy，再回本页填 Publishable Key 后点诊断。</p>
+            <summary>怎么部署 / 更新 Supabase 中转（最新版：双头 + Token 自动清洗，约 5 分钟）</summary>
+            <p style="font-size:13.5px;margin:8px 0"><b>已经部署过旧版函数的，必须再更新一次到下面这版：</b>旧版函数只原样转发请求头，网页粘贴时带空格、换行或多余 <span style="font-family:var(--mono)">Bearer</span> 就会原样传给西柚，西柚就会回 <span style="font-family:var(--mono)">mcp token credential not found</span>。下面这版在中转里也做同样的清洗：去掉所有空白和引号、统一成 <span style="font-family:var(--mono)">Bearer + Token 本体</span> 再发给西柚，并同时认 <span style="font-family:var(--mono)">X-Xydc-Authorization</span> 和 <span style="font-family:var(--mono)">X-Xydc-Token</span> 两个头。把函数代码整段换成下面新版，点右下角 <b>Deploy updates</b> 等部署成功，再回本页点诊断——只换网页不换函数，清洗只做了一半。</p>
             <ol style="margin:6px 0;padding-left:20px;font-size:13.5px">
               <li style="margin-bottom:5px">打开 supabase.com 进你的项目（例如 <span style="font-family:var(--mono)">asin-analysis</span>），左边点 <b>Edge Functions</b>，打开已有的 <span style="font-family:var(--mono)">xydc-proxy</span>（没有就新建，名字填 <span style="font-family:var(--mono)">xydc-proxy</span>，入口文件必须是 <span style="font-family:var(--mono)">index.ts</span>）。</li>
-              <li style="margin-bottom:5px">把代码整段换成下面这段，点 <b>Deploy</b>。代码里不写任何 Token 或 key：西柚 Token 从 <span style="font-family:var(--mono)">X-Xydc-Authorization</span> 头读，没有这个头时才回退读 <span style="font-family:var(--mono)">Authorization</span>（兼容关掉 Verify JWT 的部署）。</li>
+              <li style="margin-bottom:5px">把代码整段换成下面这段，点 <b>Deploy updates / Deploy</b> 并等它显示成功。代码里不写任何 Token 或 key：西柚 Token 优先从 <span style="font-family:var(--mono)">X-Xydc-Authorization</span> 头读，其次 <span style="font-family:var(--mono)">X-Xydc-Token</span>，都没有时才回退读 <span style="font-family:var(--mono)">Authorization</span>（兼容关掉 Verify JWT 的部署），读到后一律先过 <span style="font-family:var(--mono)">normalizeXydcAuth</span> 清洗再转发。</li>
             </ol>
-            <pre style="background:var(--surface2);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0 0 8px">const CORS = {
+            <pre style="background:var(--surface2);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0 0 8px">import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+
+const CORS = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-xydc-authorization, mcp-session-id, mcp-protocol-version",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type, mcp-protocol-version, mcp-session-id, x-xydc-authorization, x-xydc-token",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Access-Control-Expose-Headers": "mcp-session-id",
-};
-Deno.serve(async (req) =&gt; {
-  if (req.method === "OPTIONS") return new Response(null, { headers: CORS });
-  // 关键：西柚 Token 优先从单独的头读，避免被 Supabase 网关当成它自己的 JWT 拦下
-  const xydcAuth = req.headers.get("X-Xydc-Authorization") || req.headers.get("Authorization") || "";
-  const r = await fetch("https://mcp.xydc.com/mcp", {
+}
+
+// 和网页端同一套清洗：去零宽字符、去包裹引号、反复去 Bearer 前缀、去掉全部空白，
+// 最后统一拼成 "Bearer " + Token 本体。多一个空格/换行不会再让西柚查不到。
+function normalizeXydcAuth(raw: string | null): string {
+  let s = (raw || "").replace(/[\u200B-\u200D\uFEFF]/g, "").trim()
+  s = s.replace(/^["'`]+/, "").replace(/["'`]+$/, "").trim()
+  for (let i = 0; i &lt; 5; i++) {
+    const m = s.match(/^bearer\s*:\s*/i) || s.match(/^bearer\s+/i)
+    if (!m) break
+    s = s.slice(m[0].length).trim()
+  }
+  s = s.replace(/\s+/g, "").replace(/^["'`]+/, "").replace(/["'`]+$/, "")
+  return s ? `Bearer ${s}` : ""
+}
+
+serve(async (req) =&gt; {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { headers: CORS })
+  }
+  const rawAuth = req.headers.get("x-xydc-authorization") || req.headers.get("x-xydc-token") || req.headers.get("authorization") || ""
+  const auth = normalizeXydcAuth(rawAuth)
+  const body = await req.text()
+  const res = await fetch("https://mcp.xydc.com/mcp", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Accept": "application/json, text/event-stream",
-      "Authorization": xydcAuth,
-      "MCP-Protocol-Version": req.headers.get("MCP-Protocol-Version") || "2025-11-25",
-      ...(req.headers.get("Mcp-Session-Id") ? { "Mcp-Session-Id": req.headers.get("Mcp-Session-Id") } : {}),
+      "Authorization": auth,
+      "MCP-Protocol-Version": req.headers.get("mcp-protocol-version") || "2025-11-25",
+      ...(req.headers.get("mcp-session-id") ? { "Mcp-Session-Id": req.headers.get("mcp-session-id")! } : {}),
     },
-    body: await req.text(),
-  });
-  const h = new Headers(CORS);
-  h.set("Content-Type", r.headers.get("Content-Type") || "application/json");
-  const sid = r.headers.get("Mcp-Session-Id");
-  if (sid) h.set("Mcp-Session-Id", sid);
-  return new Response(await r.text(), { status: r.status, headers: h });
-});</pre>
+    body,
+  })
+  const text = await res.text()
+  const headers = new Headers(CORS)
+  headers.set("Content-Type", res.headers.get("content-type") || "application/json")
+  const sid = res.headers.get("mcp-session-id")
+  if (sid) headers.set("Mcp-Session-Id", sid)
+  return new Response(text, { status: res.status, headers })
+})</pre>
             <ol start="3" style="margin:6px 0;padding-left:20px;font-size:13.5px">
               <li style="margin-bottom:5px"><b>路线 A（推荐，不用命令行）：保持 Verify JWT 开着。</b>回本页上方填三样：西柚 Token、中转地址 <span style="font-family:var(--mono)">https://你的项目ID.supabase.co/functions/v1/xydc-proxy</span>、Supabase Publishable Key；通道选「只走我自己的中转地址」，点「诊断连接」。页面发请求时 <span style="font-family:var(--mono)">Authorization</span> 带的是 Supabase 的 key（过网关），西柚 Token 走单独的头（到西柚），两边互不冲突。</li>
               <li style="margin-bottom:5px"><b>路线 B（二选一）：关掉 Verify JWT。</b>网页编辑器里部署时如果有 <b>Verify JWT</b> 开关就关掉；没有开关就用命令行重新部署：<span style="font-family:var(--mono)">supabase functions deploy xydc-proxy --no-verify-jwt</span>。走这条路线时本页的 Publishable Key 可以留空，页面会直接用 <span style="font-family:var(--mono)">Authorization</span> 发西柚 Token。注意：只在网页里改代码、没带 <span style="font-family:var(--mono)">--no-verify-jwt</span> 重新部署，Verify JWT 还是开着的，还是会拦。</li>
@@ -287,10 +310,84 @@ Deno.serve(async (req) =&gt; {
     var reports = [];   // 从本机 localStorage 恢复的历史报告
     var currentId = null;
 
-    /* ---------- Token 本机保存 ---------- */
-    function loadToken(){ try { return localStorage.getItem(LS_KEY) || ""; } catch(e){ return ""; } }
-    function storeToken(t){ try { if(t) localStorage.setItem(LS_KEY, t); else localStorage.removeItem(LS_KEY); } catch(e){} }
-    function getToken(){ return ($("token").value || "").trim() || loadToken(); }
+    /* ---------- Token 格式自动清洗 ----------
+       目标：复制时多一个空格、换行、引号，或多打了 Bearer，都不该让西柚判为 credential not found。
+       规则：去掉所有空白字符（空格/制表/换行/回车/零宽字符）、去掉包裹的引号、
+       反复去掉开头的 Bearer 前缀（大小写不敏感，可带冒号），最后只保留 Token 本体。
+       发送时由代码统一拼成 "Bearer " + 本体，页面和中转两边规则一致。 */
+    function normalizeTokenString(raw){
+      if (raw === null || raw === undefined) return "";
+      var s = String(raw);
+      // 去掉零宽 / BOM 等不可见字符
+      s = s.replace(/[\u200B-\u200D\uFEFF]/g, "");
+      s = s.trim();
+      // 去掉复制时可能带上的包裹引号
+      s = s.replace(/^["'`“”‘’]+/, "").replace(/["'`“”‘’]+$/, "").trim();
+      // 反复去掉 Bearer 前缀：Bearer xxx / bearer: xxx / BEARER  xxx 都算
+      var guard = 0;
+      while (guard < 5){
+        var m = s.match(/^bearer\s*:\s*/i) || s.match(/^bearer\s+/i);
+        if (!m) break;
+        s = s.slice(m[0].length).trim();
+        guard++;
+      }
+      // Token 本体不应含任何空白：全部空白都视为复制污染，直接去掉（换行粘贴最常见）
+      s = s.replace(/\s+/g, "");
+      // 再兜底去掉首尾可能残留的引号 / 标点包裹
+      s = s.replace(/^["'`]+/, "").replace(/["'`]+$/, "");
+      return s;
+    }
+    function normalizeSbKeyString(raw){
+      if (raw === null || raw === undefined) return "";
+      var s = String(raw).replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
+      s = s.replace(/^["'`]+/, "").replace(/["'`]+$/, "").trim();
+      var guard = 0;
+      while (guard < 5){
+        var m = s.match(/^bearer\s*:\s*/i) || s.match(/^bearer\s+/i);
+        if (!m) break;
+        s = s.slice(m[0].length).trim(); guard++;
+      }
+      s = s.replace(/\s+/g, "");
+      return s;
+    }
+    // 指纹：只显示长度 + 首 4 + 尾 4，不暴露完整 Token，方便核对“传过去的到底是哪一串”
+    function tokenFingerprint(normalized){
+      var t = normalized || "";
+      if (!t) return "Token：未填（长度 0）";
+      var head = t.slice(0, 4), tail = t.length > 4 ? t.slice(-4) : "";
+      var masked = t.length <= 8 ? head + "…" : head + "…" + tail;
+      return "Token 指纹：长度 " + t.length + " · " + masked + "（首 " + head + " / 尾 " + (tail || "—") + "）";
+    }
+    function tokenCleanNote(raw, normalized){
+      var r = raw === null || raw === undefined ? "" : String(raw);
+      if (!r || r === normalized) return "";
+      var notes = [];
+      if (/^\s|\s$/.test(r) || /\n|\r|\t/.test(r)) notes.push("已去掉首尾空格/换行");
+      if (/\s/.test(normalized ? r.replace(normalized, "") : r) && /\s/.test(r)) { /* covered above */ }
+      if (/bearer/i.test(r)) notes.push("已去掉多余的 Bearer 前缀，发送时统一补回");
+      if (/["'`“”]/.test(r)) notes.push("已去掉包裹引号");
+      if (r.replace(/\s+/g, "") !== r && !notes.length) notes.push("已去掉空白字符");
+      if (r.length !== normalized.length && !notes.length) notes.push("已自动清洗格式");
+      return notes.length ? "（" + notes.join("；") + "，实际发送的是清洗后的版本）" : "（已自动清洗格式，实际发送的是清洗后的版本）";
+    }
+    function renderTokFingerprint(){
+      var el = $("tokFingerprint"); if (!el) return;
+      var raw = $("token") ? ($("token").value || "") : "";
+      var norm = normalizeTokenString(raw) || normalizeTokenString(loadTokenRaw());
+      if (!norm){ el.textContent = ""; return; }
+      el.textContent = tokenFingerprint(norm) + tokenCleanNote(raw, norm) + " · 发送头统一为 Authorization: Bearer + 上述 Token 本体";
+    }
+    function loadTokenRaw(){ try { return localStorage.getItem(LS_KEY) || ""; } catch(e){ return ""; } }
+    /* ---------- Token 本机保存（保存的永远是清洗后的版本） ---------- */
+    function loadToken(){ return normalizeTokenString(loadTokenRaw()); }
+    function storeToken(t){ var n = normalizeTokenString(t); try { if(n) localStorage.setItem(LS_KEY, n); else localStorage.removeItem(LS_KEY); } catch(e){} return n; }
+    function getToken(){
+      var raw = $("token") ? ($("token").value || "") : "";
+      var n = normalizeTokenString(raw);
+      if (n) return n;
+      return loadToken();
+    }
+    function getTokenRawForNote(){ return $("token") ? ($("token").value || "") : ""; }
 
     /* ---------- 历史报告本机保存（localStorage，刷新保留） ---------- */
     function loadReports(){
@@ -322,8 +419,9 @@ Deno.serve(async (req) =&gt; {
     var LS_PROXY_KEY = "xydc_custom_proxy";
     var LS_SB_KEY = "xydc_sb_anon_key";
     function getConnMode(){ var v = ($("connMode") && $("connMode").value) || ""; if (!v){ try { v = localStorage.getItem(LS_MODE_KEY) || "auto"; } catch(e){ v = "auto"; } } if (v !== "direct" && v !== "custom") v = "auto"; return v; }
-    function getCustomProxy(){ var v = ($("customProxy") && $("customProxy").value || "").trim(); if (v) return v; try { return localStorage.getItem(LS_PROXY_KEY) || ""; } catch(e){ return ""; } }
-    function getSbKey(){ var el = $("sbKey"); var v = (el && el.value || "").trim(); if (v) return v; try { return (localStorage.getItem(LS_SB_KEY) || "").trim(); } catch(e){ return ""; } }
+    function getCustomProxy(){ var v = ($("customProxy") && $("customProxy").value || "").replace(/\s+/g, ""); if (v) return v; try { return (localStorage.getItem(LS_PROXY_KEY) || "").replace(/\s+/g, ""); } catch(e){ return ""; } }
+    function getSbKey(){ var el = $("sbKey"); var v = normalizeSbKeyString(el && el.value || ""); if (v) return v; try { return normalizeSbKeyString(localStorage.getItem(LS_SB_KEY) || ""); } catch(e){ return ""; } }
+    function sbKeyFingerprint(){ var k = getSbKey(); if (!k) return "Publishable Key：未填"; return "Publishable Key 指纹：长度 " + k.length + " · " + k.slice(0, 6) + "…" + (k.length > 6 ? k.slice(-4) : ""); }
     function isSupabaseProxyUrl(u){ return !!u && u.indexOf(".supabase.co/functions/") >= 0; }
     function resolveCustomUrl(){
       var c = getCustomProxy(); if (!c) return null;
@@ -373,13 +471,15 @@ Deno.serve(async (req) =&gt; {
     }
 
     async function mcpSend(session, token, method, params, isNotification, timeoutMs){
+      // 发送前最后一道清洗：无论上层传进来什么格式，这里都统一成干净的 Token 本体再拼 Bearer
+      token = normalizeTokenString(token);
       session.seq += 1;
       var id = isNotification ? null : session.seq;
       var body = { jsonrpc:"2.0", method:method, params:params || {} };
       if (id !== null) body.id = id;
       var targetUrl = session.routeUrl || MCP_URL;
       var isCustom = session.routeId === "custom" || (!!targetUrl && targetUrl !== MCP_URL);
-      var sbKey = isCustom ? getSbKey() : "";
+      var sbKey = isCustom ? normalizeSbKeyString(getSbKey()) : "";
       var useDual = !!(isCustom && sbKey);
       var headers = {
         "Content-Type":"application/json",
@@ -420,7 +520,7 @@ Deno.serve(async (req) =&gt; {
           // 走 Supabase 且没填 key、也没证据表明已关 Verify JWT 时，401 最常见原因就是网关拦截，给出两种可能但把网关排第一
           throw new McpError("proxy-jwt", "【先按 Supabase 拦截处理，别先换 Token】经 Supabase 中转返回 " + resp.status + (respText ? "，原始返回：" + snippetOf(respText) : "") + "。你还没在本页填 Supabase Publishable Key，也没有用双头发送，西柚 Token 是直接放在 Authorization 头里发的，Supabase 默认开着的 Verify JWT 会把它当成 Supabase 的 key 拒掉——这和你遇到的「换新 Token 还是 401」完全吻合。先做：① 函数换新版双头代码重新 Deploy；② 本页填入 Supabase Publishable / Anon Key 后重新诊断。如果这样改完诊断仍报 401 且返回里没有 Invalid JWT / UNAUTHORIZED 字样，那才是西柚返回的 401，再去换西柚 Token。另一条路是关掉 Verify JWT：supabase functions deploy xydc-proxy --no-verify-jwt。");
         }
-        throw new McpError("auth", "【西柚返回的 " + resp.status + "】请求已经过了中转、到了西柚，是西柚不认这个 Token：Token 无效或已过期。请到 platform.xydc.com 凭证管理里重新复制 MCP Token 再填进来（复制时别带空格、别带 Bearer 前缀）。" + (useDual ? "你现在用的是双头发送：如果 Supabase 函数还没换成本页下方的新版代码，旧函数会把 Supabase 的 key 当成西柚 Token 转发，也会得到这个结果——先确认函数已更新并重新 Deploy，再判断是不是 Token 本身的问题。" : "") + (respText ? "原始返回：" + snippetOf(respText) : ""));
+        throw new McpError("auth", "【西柚返回的 " + resp.status + " · mcp token credential not found 同类】请求已经过了中转、到了西柚，是西柚不认这一串。本次实际发送的已是清洗后的版本——" + tokenFingerprint(token) + "，发送头为 Authorization: Bearer + 该本体（走中转双头时经 X-Xydc-Authorization 传给函数、函数再清洗一次后转发）。页面已自动去掉首尾空格、换行和多余的 Bearer，所以这次不是复制多空格造成的：请拿这个指纹和 platform.xydc.com 凭证管理里最新 MCP Token 对长度——长度对不上就是粘的不是最新那一个，或登录的不是同一个西柚账号；长度和首尾都对得上仍报这个错，再去凭证管理新建一个 Token 立刻粘贴测试。" + (useDual ? "另：你现在用的是双头发送，如果 Supabase 函数还没换成本页下方最新版（带 normalizeXydcAuth 清洗的版本），旧函数可能把 Supabase 的 key 当成西柚 Token 转发，也会得到这个结果——先确认函数已更新并重新 Deploy，再判断是不是 Token 本身的问题。" : "") + (respText ? "原始返回：" + snippetOf(respText) : ""));
       }
       if (resp.status === 429)
         throw new McpError("quota", "接口返回 429：Credit 额度或调用频率已达上限，等额度重置后再试。");
@@ -505,22 +605,47 @@ Deno.serve(async (req) =&gt; {
       box.classList.remove("hidden"); // 中转地址始终可见，方便直连不通时直接填入
     }
     (function initConnUI(){
-      var modeEl = $("connMode"), pxEl = $("customProxy"), sbEl = $("sbKey");
+      var modeEl = $("connMode"), pxEl = $("customProxy"), sbEl = $("sbKey"), tokEl = $("token");
       try { var sm = localStorage.getItem(LS_MODE_KEY); if (sm && modeEl) modeEl.value = sm; } catch(e){}
-      try { var sp = localStorage.getItem(LS_PROXY_KEY); if (sp && pxEl) pxEl.value = sp; } catch(e){}
-      try { var sk = localStorage.getItem(LS_SB_KEY); if (sk && sbEl) sbEl.value = sk; } catch(e){}
+      try { var sp = localStorage.getItem(LS_PROXY_KEY); if (sp && pxEl) pxEl.value = sp.replace(/\s+/g, ""); } catch(e){}
+      try { var sk = localStorage.getItem(LS_SB_KEY); if (sk && sbEl) sbEl.value = normalizeSbKeyString(sk); } catch(e){}
+      if (tokEl){
+        tokEl.addEventListener("input", function(){ renderTokFingerprint(); });
+        tokEl.addEventListener("change", function(){
+          // 粘贴完失焦时直接把输入框回写成清洗后的版本，眼睛看到的就是实际会发送的
+          var n = normalizeTokenString(tokEl.value || "");
+          if (n && tokEl.value !== n) tokEl.value = n;
+          renderTokFingerprint();
+        });
+        tokEl.addEventListener("paste", function(){
+          setTimeout(function(){
+            var n = normalizeTokenString(tokEl.value || "");
+            if (n && tokEl.value !== n) tokEl.value = n;
+            renderTokFingerprint();
+          }, 0);
+        });
+      }
       if (modeEl) modeEl.addEventListener("change", function(){ try { localStorage.setItem(LS_MODE_KEY, modeEl.value); } catch(e){} syncProxyBox(); $("diagStatus").innerHTML = ""; $("diagList").classList.add("hidden"); });
-      if (pxEl) pxEl.addEventListener("change", function(){ try { localStorage.setItem(LS_PROXY_KEY, pxEl.value.trim()); } catch(e){} });
-      if (sbEl) sbEl.addEventListener("change", function(){ try { var v = sbEl.value.trim(); if (v) localStorage.setItem(LS_SB_KEY, v); else localStorage.removeItem(LS_SB_KEY); } catch(e){} });
+      if (pxEl) pxEl.addEventListener("change", function(){ var v = (pxEl.value || "").replace(/\s+/g, ""); pxEl.value = v; try { localStorage.setItem(LS_PROXY_KEY, v); } catch(e){} });
+      if (sbEl) sbEl.addEventListener("change", function(){ var v = normalizeSbKeyString(sbEl.value || ""); sbEl.value = v; try { if (v) localStorage.setItem(LS_SB_KEY, v); else localStorage.removeItem(LS_SB_KEY); } catch(e){} });
       syncProxyBox();
     })();
 
-    /* ---------- 诊断连接：逐条通道单独试 ---------- */
+    /* ---------- 诊断连接：逐条通道单独试，先亮指纹再试连 ---------- */
     $("diagBtn").addEventListener("click", async function(){
+      var rawTok = getTokenRawForNote();
       var t = getToken(), st = $("diagStatus"), list = $("diagList");
+      renderTokFingerprint();
       if (!t){ st.innerHTML = '<span class="err">先粘贴 Token 再诊断（诊断需要带 Token 试连）。</span>'; return; }
+      // 把输入框回写成清洗后的版本，并把清洗后的版本落盘，避免诊断用的和保存的不是同一串
+      if ($("token") && $("token").value !== t) $("token").value = t;
+      storeToken(t);
       var btn = $("diagBtn"); btn.disabled = true; btn.textContent = "诊断中…";
       st.textContent = "正在逐条试通道，每条最多等 25 秒…"; list.classList.remove("hidden"); list.innerHTML = "";
+      var fpRow = document.createElement("div");
+      fpRow.style.cssText = "padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--surface2);font-family:var(--mono);font-size:12.5px;word-break:break-all;margin-bottom:6px";
+      fpRow.textContent = "本次实际发送 → " + tokenFingerprint(t) + tokenCleanNote(rawTok, t) + " ｜ " + sbKeyFingerprint() + " ｜ 中转地址：" + (getCustomProxy() || "（未填）") + " ｜ 发送方式：" + (getSbKey() && getCustomProxy() ? "双头（Authorization=Supabase Key 过网关，X-Xydc-Authorization=Bearer+Token 到西柚）" : "单头（Authorization=Bearer+Token）");
+      list.appendChild(fpRow);
       var routes = getRoutes(); var anyOk = false;
       for (var i=0;i<routes.length;i++){
         var route = routes[i];
@@ -537,32 +662,40 @@ Deno.serve(async (req) =&gt; {
           row.innerHTML = "<b>" + esc(route.label) + '</b>：<span class="err">不通 ✗</span> ' + esc(e.message || e);
         }
       }
-      st.innerHTML = anyOk ? '<span class="ok">诊断完成：至少有一条通道能连通，保持当前连接方式直接点「开始分析」即可，页面会自动用通的那条。</span>' : '<span class="err">诊断完成：当前所有通道都不通。看上面每条的具体原因：写着 Supabase / Invalid JWT 的按双头方案改（更新函数代码 + 填 Publishable Key，或 --no-verify-jwt 重新部署），写着西柚返回 401 的才换西柚 Token，写着浏览器拦截的是直连跨域。</span>';
+      st.innerHTML = anyOk ? '<span class="ok">诊断完成：至少有一条通道能连通，保持当前连接方式直接点「开始分析」即可，页面会自动用通的那条。本次发送的 ' + esc(tokenFingerprint(t)) + ' 已被西柚接受。</span>' : '<span class="err">诊断完成：当前所有通道都不通。本次实际发送的是清洗后的 ' + esc(tokenFingerprint(t)) + '——先拿这个长度和首尾去和凭证管理里最新 Token 对：对不上就不是同一串；对得上仍不通，看上面每条的具体原因：写着 Supabase / Invalid JWT 的按双头方案改（函数换最新版清洗代码 + 填 Publishable Key，并点 Deploy updates），写着西柚返回 401 / credential not found 的才新建 Token，写着浏览器拦截的是直连跨域。</span>';
       btn.disabled = false; btn.textContent = "诊断连接";
     });
 
     /* ---------- 测试连接 ---------- */
     $("testTok").addEventListener("click", async function(){
+      var rawTok = getTokenRawForNote();
       var t = getToken(), st = $("tokStatus");
+      renderTokFingerprint();
       if (!t){ st.innerHTML = '<span class="err">先粘贴 Token 再测试。</span>'; return; }
-      st.textContent = "正在连接西柚洞察（直连不通会自动改走你已填的中转地址）…";
+      if ($("token") && $("token").value !== t) $("token").value = t;
+      storeToken(t);
+      st.textContent = "正在连接西柚洞察（" + tokenFingerprint(t) + tokenCleanNote(rawTok, t) + "，直连不通会自动改走你已填的中转地址）…";
       try {
         var s = newSession();
-        var used = await mcpInit(s, t, function(route){ st.textContent = "正在试通道：" + route.label + "…"; });
+        var used = await mcpInit(s, t, function(route){ st.textContent = "正在试通道：" + route.label + "（" + tokenFingerprint(t) + "）…"; });
         var q = await callTool(s, t, "get_account_credit_quota", { user_task:"测试西柚洞察 MCP 连接", intent_summary:"查询账户额度，验证 Token 可用" });
         var d = q.data || q;
         var mo = d.monthly || {}, wk = d.weekly || {};
-        st.innerHTML = '<span class="ok">连接成功（通道：' + esc(used.label) + '）。</span> 套餐 ' + esc(d.planName || "—") +
+        st.innerHTML = '<span class="ok">连接成功（通道：' + esc(used.label) + '，' + esc(tokenFingerprint(t)) + '）。</span> 套餐 ' + esc(d.planName || "—") +
           "，本月剩余 " + fmt(mo.remaining !== undefined ? mo.remaining : mo.remain) + " Credit，本周剩余 " + fmt(wk.remaining !== undefined ? wk.remaining : wk.remain) + " Credit。";
-      } catch(e){ st.innerHTML = '<span class="err">连接失败：' + esc(e.message || e) + "</span>"; }
+      } catch(e){ st.innerHTML = '<span class="err">连接失败（本次发送 ' + esc(tokenFingerprint(t)) + '）：' + esc(e.message || e) + "</span>"; }
     });
     $("saveTok").addEventListener("click", function(){
-      var t = ($("token").value || "").trim(), st = $("tokStatus");
+      var raw = $("token").value || "";
+      var t = normalizeTokenString(raw), st = $("tokStatus");
       if (!t){ st.innerHTML = '<span class="err">输入框是空的，没有可保存的 Token。</span>'; return; }
-      storeToken(t); st.innerHTML = '<span class="ok">已保存到本机浏览器，下次打开自动带出。</span>';
+      var saved = storeToken(t);
+      $("token").value = saved;
+      renderTokFingerprint();
+      st.innerHTML = '<span class="ok">已保存清洗后的 Token 到本机浏览器，下次打开自动带出。' + esc(tokenFingerprint(saved)) + esc(tokenCleanNote(raw, saved)) + '</span>';
     });
     $("clearTok").addEventListener("click", function(){
-      storeToken(""); $("token").value = ""; $("tokStatus").innerHTML = '<span class="wrn">已清除本机保存的 Token。</span>';
+      storeToken(""); $("token").value = ""; renderTokFingerprint(); $("tokStatus").innerHTML = '<span class="wrn">已清除本机保存的 Token。</span>';
     });
 
     /* ---------- 分析流程 ---------- */
@@ -924,6 +1057,7 @@ Deno.serve(async (req) =&gt; {
         var as = clone.querySelector("#asin"); if (as){ as.removeAttribute("value"); as.value = ""; }
         var bn = clone.querySelector("#banner"); if (bn){ bn.innerHTML = ""; bn.className = "banner error"; }
         var ts = clone.querySelector("#tokStatus"); if (ts) ts.innerHTML = "";
+        var tf = clone.querySelector("#tokFingerprint"); if (tf) tf.textContent = "";
         var cp = clone.querySelector("#customProxy"); if (cp){ cp.removeAttribute("value"); cp.value = ""; }
         var sbk = clone.querySelector("#sbKey"); if (sbk){ sbk.removeAttribute("value"); sbk.value = ""; }
         var ds = clone.querySelector("#diagStatus"); if (ds) ds.innerHTML = "";
@@ -938,8 +1072,11 @@ Deno.serve(async (req) =&gt; {
       } catch(e){ showBanner("<b>下载失败：</b>浏览器拦住了下载，请改用部署后的 https 链接打开本页再点下载，或在电脑端 Chrome 里重试。"); }
     });
 
-    /* ---------- 初始化：恢复本机保存的 Token 与历史报告 ---------- */
+    /* ---------- 初始化：恢复本机保存的 Token（恢复时也清洗一次，旧版存的脏格式自动变干净）与历史报告 ---------- */
+    var savedRaw = loadTokenRaw();
     var saved = loadToken(); if (saved) $("token").value = saved;
+    if (saved && savedRaw !== saved) storeToken(saved);
+    renderTokFingerprint();
     reports = loadReports();
     currentId = loadCurrentId();
     if (reports.length){
