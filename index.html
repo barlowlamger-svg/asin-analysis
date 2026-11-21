@@ -110,7 +110,7 @@
   <body>
     <main class="wrap">
       <h1>单 ASIN 市场分析</h1>
-      <p class="lede">填入你自己的西柚洞察 MCP Token，输入一个 ASIN 和站点，页面经你自己的 Supabase 中转连西柚洞察拉产品、流量、关键词、竞品和订单数据，按 100 分制算出「能不能尝试上架」的确定性。走 Supabase 时要用下方新版双头方式：Supabase 的 key 只用来过它的 JWT 网关，西柚 Token 走单独的头转发，两者不冲突。</p>
+      <p class="lede">填入你自己的西柚洞察 MCP Token，输入一个 ASIN 和站点，页面经你自己的 Supabase 中转连西柚洞察拉产品、流量、关键词、竞品和订单数据，按 100 分制算出「能不能尝试上架」的确定性。走 Supabase 时要用下方最新版中转：双头过 JWT 网关 + SSE 流式透传——西柚返回的是流式响应，中转直接透传、网页边读边解析，拿到对应那条数据就结束，不再等整个流关闭而超时。</p>
 
       <section class="card" aria-labelledby="tok-h">
         <h2 id="tok-h">1 · 西柚洞察 MCP Token</h2>
@@ -133,6 +133,10 @@
             <b style="color:var(--bad)">换了新 Token 还是 401？多半不是 Token 的问题，是 Supabase 的 JWT 验证在拦。</b><br>
             Supabase Edge Function 默认开着 Verify JWT：它会先检查请求头 <span style="font-family:var(--mono)">Authorization</span> 是不是 <b>Supabase 自己的</b> JWT。网页原本把西柚 Token 放在这个头里发过去，Supabase 就把它当成自己的 key 来验，验不过直接返回 401——请求根本没到函数、更没到西柚，所以换多少个新西柚 Token 都一样报 401。<br>
             <b>本页已改成双头转发（见下方新版函数代码）：</b><span style="font-family:var(--mono)">Authorization</span> 放 Supabase 的 Publishable / Anon Key 用来过网关，西柚 Token 改放 <span style="font-family:var(--mono)">X-Xydc-Authorization</span> 单独传，函数再把它还原成西柚需要的头转发。这样不用关 Verify JWT 也能通。只改网页或只改函数都不行，<b>两边都要换成新版</b>：① 函数代码换成下方新版并重新 Deploy；② 在下方填入你的 Supabase Publishable Key。
+          </div>
+          <div style="background:var(--warn-bg);border:1px solid var(--warn);border-radius:8px;padding:10px 12px;font-size:13.5px;margin:0 0 12px">
+            <b style="color:var(--warn)">一直转圈 / 超时拿不到数据？这次修的是 SSE 流被卡死，不是 Token。</b><br>
+            西柚返回的是 <span style="font-family:var(--mono)">text/event-stream</span> 流式响应，流不会马上关闭。旧版中转用 <span style="font-family:var(--mono)">await res.text()</span> 一次性读完整个流、旧版网页也用 <span style="font-family:var(--mono)">await resp.text()</span> 等整段返回，两边都在等流关闭，结果就是一直等到超时。<b>本页已改成流式：</b>中转用 <span style="font-family:var(--mono)">new Response(res.body, …)</span> 直接透传，网页用流式读取逐条解析 <span style="font-family:var(--mono)">data:</span> 行，拿到带对应 <span style="font-family:var(--mono)">id</span> 的那条 JSON-RPC 就立刻结束。要生效<b>两边都得换新版</b>：① 网页用这一版；② Supabase 函数换成下方最新代码（搜得到 <span style="font-family:var(--mono)">new Response(res.body</span>、搜不到 <span style="font-family:var(--mono)">await res.text()</span> 才算新版）并点 <b>Deploy updates</b>。只换一边，另一边还是会卡住。
           </div>
           <div style="background:var(--surface2);border-radius:8px;padding:10px 12px;font-size:13px;margin:0 0 12px">
             <b>两种 401 怎么分（诊断和报错会自动帮你分）：</b>
@@ -167,11 +171,11 @@
           </div>
           <p class="hint" style="margin-top:8px">为什么不用公共代理：公共代理会经手你的 Token，等于把西柚账号凭证交给陌生服务器，不能用。本页只保留两条路：直连西柚，或走你自己的中转。诊断会逐条试当前通道并告诉你哪条通、哪条不通。</p>
           <details>
-            <summary>怎么部署 / 更新 Supabase 中转（最新版：双头 + Token 自动清洗，约 5 分钟）</summary>
-            <p style="font-size:13.5px;margin:8px 0"><b>已经部署过旧版函数的，必须再更新一次到下面这版：</b>旧版函数只原样转发请求头，网页粘贴时带空格、换行或多余 <span style="font-family:var(--mono)">Bearer</span> 就会原样传给西柚，西柚就会回 <span style="font-family:var(--mono)">mcp token credential not found</span>。下面这版在中转里也做同样的清洗：去掉所有空白和引号、统一成 <span style="font-family:var(--mono)">Bearer + Token 本体</span> 再发给西柚，并同时认 <span style="font-family:var(--mono)">X-Xydc-Authorization</span> 和 <span style="font-family:var(--mono)">X-Xydc-Token</span> 两个头。把函数代码整段换成下面新版，点右下角 <b>Deploy updates</b> 等部署成功，再回本页点诊断——只换网页不换函数，清洗只做了一半。</p>
+            <summary>怎么部署 / 更新 Supabase 中转（最新版：双头 + Token 清洗 + SSE 流式透传，约 5 分钟）</summary>
+            <p style="font-size:13.5px;margin:8px 0"><b>已经部署过旧版函数的，必须再更新一次到下面这版——这次改的是超时的根本原因：</b>西柚返回的是 <span style="font-family:var(--mono)">text/event-stream</span> 流式响应（SSE），流不会马上关闭。旧版函数用 <span style="font-family:var(--mono)">await res.text()</span> 想一次性读完整个流，就会一直等流关闭，等到超时也拿不到数据——这就是之前「部署了、Key 也填了，还是连不上 / 一直转圈」的真正卡点。下面这版改成<b>流式透传</b>：直接 <span style="font-family:var(--mono)">return new Response(res.body, …)</span>，不读完、不等待，数据一段一段透传回网页；网页端也已改成流式读取，逐条解析 <span style="font-family:var(--mono)">data:</span> 行，拿到带对应 <span style="font-family:var(--mono)">id</span> 的那条 JSON-RPC 就立刻结束，不等整个流关闭。同时保留上一版的清洗：去掉所有空白和引号、统一成 <span style="font-family:var(--mono)">Bearer + Token 本体</span> 再发给西柚，并同时认 <span style="font-family:var(--mono)">X-Xydc-Authorization</span> 和 <span style="font-family:var(--mono)">X-Xydc-Token</span> 两个头。把函数代码整段换成下面新版，点右下角 <b>Deploy updates</b> 等部署成功，再回本页点诊断——<b>只换网页不换函数，流还是会被旧函数卡住；只换函数不换网页，网页还是会等流关闭。两边都必须是这一版。</b>判断函数是不是新版：搜代码里有没有 <span style="font-family:var(--mono)">new Response(res.body</span>，有才是新版；如果还有 <span style="font-family:var(--mono)">await res.text()</span> 就是旧版，没换成功。</p>
             <ol style="margin:6px 0;padding-left:20px;font-size:13.5px">
               <li style="margin-bottom:5px">打开 supabase.com 进你的项目（例如 <span style="font-family:var(--mono)">asin-analysis</span>），左边点 <b>Edge Functions</b>，打开已有的 <span style="font-family:var(--mono)">xydc-proxy</span>（没有就新建，名字填 <span style="font-family:var(--mono)">xydc-proxy</span>，入口文件必须是 <span style="font-family:var(--mono)">index.ts</span>）。</li>
-              <li style="margin-bottom:5px">把代码整段换成下面这段，点 <b>Deploy updates / Deploy</b> 并等它显示成功。代码里不写任何 Token 或 key：西柚 Token 优先从 <span style="font-family:var(--mono)">X-Xydc-Authorization</span> 头读，其次 <span style="font-family:var(--mono)">X-Xydc-Token</span>，都没有时才回退读 <span style="font-family:var(--mono)">Authorization</span>（兼容关掉 Verify JWT 的部署），读到后一律先过 <span style="font-family:var(--mono)">normalizeXydcAuth</span> 清洗再转发。</li>
+              <li style="margin-bottom:5px">把代码整段换成下面这段，点 <b>Deploy updates / Deploy</b> 并等它显示成功。代码里不写任何 Token 或 key：西柚 Token 优先从 <span style="font-family:var(--mono)">X-Xydc-Authorization</span> 头读，其次 <span style="font-family:var(--mono)">X-Xydc-Token</span>，都没有时才回退读 <span style="font-family:var(--mono)">Authorization</span>（兼容关掉 Verify JWT 的部署），读到后一律先过 <span style="font-family:var(--mono)">normalizeXydcAuth</span> 清洗再转发；响应一律用 <span style="font-family:var(--mono)">new Response(res.body, …)</span> 流式透传，<b>不要再出现 <span style="font-family:var(--mono)">await res.text()</span></b>。</li>
             </ol>
             <pre style="background:var(--surface2);border-radius:8px;padding:10px 12px;font-family:var(--mono);font-size:12px;overflow-x:auto;white-space:pre-wrap;word-break:break-all;margin:0 0 8px">import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 
@@ -214,12 +218,15 @@ serve(async (req) =&gt; {
     },
     body,
   })
-  const text = await res.text()
+  // ★ 流式透传（本次根治点）：西柚返回的是 text/event-stream 流式响应，
+  // 流不会马上关闭。绝不能用 await res.text() 一次性读完——那会一直等流
+  // 关闭，西柚不关流就一直等到超时，网页永远拿不到数据。
+  // 直接把 res.body 透传回去，浏览器端边读边解析，拿到对应 id 的那条就结束。
   const headers = new Headers(CORS)
   headers.set("Content-Type", res.headers.get("content-type") || "application/json")
   const sid = res.headers.get("mcp-session-id")
   if (sid) headers.set("Mcp-Session-Id", sid)
-  return new Response(text, { status: res.status, headers })
+  return new Response(res.body, { status: res.status, headers })
 })</pre>
             <ol start="3" style="margin:6px 0;padding-left:20px;font-size:13.5px">
               <li style="margin-bottom:5px"><b>路线 A（推荐，不用命令行）：保持 Verify JWT 开着。</b>回本页上方填三样：西柚 Token、中转地址 <span style="font-family:var(--mono)">https://你的项目ID.supabase.co/functions/v1/xydc-proxy</span>、Supabase Publishable Key；通道选「只走我自己的中转地址」，点「诊断连接」。页面发请求时 <span style="font-family:var(--mono)">Authorization</span> 带的是 Supabase 的 key（过网关），西柚 Token 走单独的头（到西柚），两边互不冲突。</li>
@@ -470,6 +477,107 @@ serve(async (req) =&gt; {
       try { return JSON.parse(text); } catch(e){ return null; }
     }
 
+    /* ---------- SSE 流式读取（根治点） ----------
+       西柚返回 text/event-stream：流不会马上关闭，用 await resp.text()
+       会一直等流关闭，等到超时也拿不到数据。这里用 ReadableStream 逐块读，
+       按行拆 SSE，逐条解析 data: 行；一拿到 id 与本次请求对应的那条
+       JSON-RPC 就 cancel 掉流并返回，绝不等整个流关闭。
+       非 SSE 的普通 JSON 响应也走同一条路：边读边试解析，解析成功即返回。 */
+    async function readMcpStream(resp, wantId){
+      var contentType = resp.headers.get("Content-Type") || "";
+      var isSse = contentType.indexOf("text/event-stream") >= 0;
+      if (!resp.body || typeof resp.body.getReader !== "function"){
+        var fallbackText = await resp.text();
+        return parseMcpBody(fallbackText, contentType, wantId);
+      }
+      var reader = resp.body.getReader();
+      var decoder = new TextDecoder("utf-8");
+      var buffer = "";       // 未凑满一行的残余
+      var fullText = "";     // 普通 JSON 兜底用
+      var dataLines = [];    // 当前一条 SSE 消息的 data: 行
+      function tryParseDataLines(){
+        if (!dataLines.length) return null;
+        try {
+          var m = JSON.parse(dataLines.join("\n"));
+          if (m && m.id === wantId) return m;
+        } catch(e){}
+        return null;
+      }
+      try {
+        while (true){
+          var chunk = await reader.read();
+          if (chunk.done) break;
+          var piece = decoder.decode(chunk.value, { stream:true });
+          if (!piece) continue;
+          fullText += piece;
+          buffer += piece;
+          var nl;
+          while ((nl = buffer.indexOf("\n")) >= 0){
+            var line = buffer.slice(0, nl).replace(/\r$/, "");
+            buffer = buffer.slice(nl + 1);
+            if (isSse || line.indexOf("data:") === 0 || dataLines.length){
+              if (line.indexOf("data:") === 0){
+                dataLines.push(line.slice(5).trim());
+              } else if (line === ""){
+                var hit = tryParseDataLines();
+                dataLines = [];
+                if (hit){
+                  try { await reader.cancel(); } catch(e){}
+                  return hit;
+                }
+              }
+              // event: / id: / retry: 等其他 SSE 行直接忽略
+            }
+          }
+          // 有些中转会把 SSE 去掉空行分隔或直接回普通 JSON：每块都兜底试一次
+          if (dataLines.length){
+            var hit2 = tryParseDataLines();
+            if (hit2){
+              try { await reader.cancel(); } catch(e){}
+              return hit2;
+            }
+          }
+          if (!isSse){
+            try {
+              var mj = JSON.parse(fullText);
+              if (mj && mj.id === wantId){
+                try { await reader.cancel(); } catch(e){}
+                return mj;
+              }
+            } catch(e){ /* JSON 还没收完整，继续读下一块 */ }
+          }
+        }
+      } finally {
+        try { reader.releaseLock(); } catch(e){}
+      }
+      // 流正常结束：冲掉残余行 / 残余 data 再试最后一次，最后走整段解析兜底
+      if (buffer){
+        var lastLine = buffer.replace(/\r$/, "");
+        if (lastLine.indexOf("data:") === 0) dataLines.push(lastLine.slice(5).trim());
+      }
+      var tailHit = tryParseDataLines();
+      if (tailHit) return tailHit;
+      return parseMcpBody(fullText, contentType, wantId);
+    }
+
+    // 错误响应体通常很小且不是长流，用带上限的方式读完即可（读不到也不阻断报错）
+    async function readErrorText(resp){
+      try {
+        if (!resp.body || typeof resp.body.getReader !== "function") return await resp.text();
+        var reader = resp.body.getReader();
+        var decoder = new TextDecoder("utf-8");
+        var out = "";
+        while (out.length < 4000){
+          var chunk = await reader.read();
+          if (chunk.done) break;
+          out += decoder.decode(chunk.value, { stream:true });
+        }
+        try { await reader.cancel(); } catch(e){}
+        try { reader.releaseLock(); } catch(e){}
+        return out;
+      } catch(e){ return ""; }
+    }
+
     async function mcpSend(session, token, method, params, isNotification, timeoutMs){
       // 发送前最后一道清洗：无论上层传进来什么格式，这里都统一成干净的 Token 本体再拼 Bearer
       token = normalizeTokenString(token);
@@ -506,29 +614,55 @@ serve(async (req) =&gt; {
         if (e && e.name === "AbortError") throw new McpError("timeout", "请求超时（" + Math.round(limit/1000) + " 秒），通道「" + (session.routeLabel || "直连") + "」没有在规定时间内响应。");
         throw new McpError("network", "通道「" + (session.routeLabel || "直连") + "」连不上：浏览器拦截或网络不通（直连多半是西柚未开放跨域）。本次没有拿到任何数据。");
       }
-      clearTimeout(timer);
+      // 注意：拿到响应头不等于拿到数据。超时计时要一直留到流式读完对应
+      // 的那条消息为止，不能在这里 clearTimeout——SSE 流不会马上关闭，
+      // 真正的等待发生在下面的 readMcpStream 里。
       var sid = resp.headers.get("Mcp-Session-Id");
       if (sid) session.id = sid;
       var respText = "";
-      if (!resp.ok || resp.status === 401 || resp.status === 403){ try { respText = await resp.text(); } catch(e){ respText = ""; } }
+      if (!resp.ok || resp.status === 401 || resp.status === 403){
+        try { respText = await readErrorText(resp); } catch(e){ respText = ""; }
+        clearTimeout(timer);
+      }
       if (resp.status === 401 || resp.status === 403){
         // 先分清是谁返回的 401：Supabase 网关（函数没运行）还是西柚（函数已转发）
         if (isCustom && (isSupabaseGatewayBody(respText) || (isSupabaseProxyUrl(targetUrl) && !useDual && respText && respText.indexOf("code") >= 0 && respText.indexOf("UNAUTHORIZED") >= 0))){
-          throw new McpError("proxy-jwt", "【Supabase 中转拦的，不是西柚 Token 无效】Supabase 网关返回 " + resp.status + "，在函数运行前就拦下了：它把请求头里的内容当成 Supabase 自己的 JWT 来验。西柚根本没收到请求，所以换新 Token 也没用。原始返回：" + snippetOf(respText) + "。解决（二选一）：① 保持 Verify JWT 开着——把函数代码换成本页下方的新版双头代码重新 Deploy，并在本页填入 Supabase Publishable / Anon Key（填了之后页面会自动改用双头发送）；② 关掉 Verify JWT 后重新部署：supabase functions deploy xydc-proxy --no-verify-jwt。改好后重新点「诊断连接」。另外确认函数代码是新版：旧版只读 Authorization 头，读不到 X-Xydc-Authorization，也会继续 401。");
+          throw new McpError("proxy-jwt", "【Supabase 中转拦的，不是西柚 Token 无效】Supabase 网关返回 " + resp.status + "，在函数运行前就拦下了：它把请求头里的内容当成 Supabase 自己的 JWT 来验。西柚根本没收到请求，所以换新 Token 也没用。原始返回：" + snippetOf(respText) + "。解决（二选一）：① 保持 Verify JWT 开着——把函数代码换成本页下方的新版双头代码重新 Deploy，并在本页填入 Supabase Publishable / Anon Key（填了之后页面会自动改用双头发送）；② 关掉 Verify JWT 后重新部署：supabase functions deploy xydc-proxy --no-verify-jwt。改好后重新点「诊断连接」。另外确认函数代码是最新版：搜得到 new Response(res.body（流式透传）且没有 await res.text()，并且能读 X-Xydc-Authorization 头，才算新版；旧版只读 Authorization 头会继续 401，旧版用 await res.text() 读 SSE 流则会卡到超时。");
         }
         if (isCustom && isSupabaseProxyUrl(targetUrl) && !useDual && !getSbKey()){
           // 走 Supabase 且没填 key、也没证据表明已关 Verify JWT 时，401 最常见原因就是网关拦截，给出两种可能但把网关排第一
           throw new McpError("proxy-jwt", "【先按 Supabase 拦截处理，别先换 Token】经 Supabase 中转返回 " + resp.status + (respText ? "，原始返回：" + snippetOf(respText) : "") + "。你还没在本页填 Supabase Publishable Key，也没有用双头发送，西柚 Token 是直接放在 Authorization 头里发的，Supabase 默认开着的 Verify JWT 会把它当成 Supabase 的 key 拒掉——这和你遇到的「换新 Token 还是 401」完全吻合。先做：① 函数换新版双头代码重新 Deploy；② 本页填入 Supabase Publishable / Anon Key 后重新诊断。如果这样改完诊断仍报 401 且返回里没有 Invalid JWT / UNAUTHORIZED 字样，那才是西柚返回的 401，再去换西柚 Token。另一条路是关掉 Verify JWT：supabase functions deploy xydc-proxy --no-verify-jwt。");
         }
-        throw new McpError("auth", "【西柚返回的 " + resp.status + " · mcp token credential not found 同类】请求已经过了中转、到了西柚，是西柚不认这一串。本次实际发送的已是清洗后的版本——" + tokenFingerprint(token) + "，发送头为 Authorization: Bearer + 该本体（走中转双头时经 X-Xydc-Authorization 传给函数、函数再清洗一次后转发）。页面已自动去掉首尾空格、换行和多余的 Bearer，所以这次不是复制多空格造成的：请拿这个指纹和 platform.xydc.com 凭证管理里最新 MCP Token 对长度——长度对不上就是粘的不是最新那一个，或登录的不是同一个西柚账号；长度和首尾都对得上仍报这个错，再去凭证管理新建一个 Token 立刻粘贴测试。" + (useDual ? "另：你现在用的是双头发送，如果 Supabase 函数还没换成本页下方最新版（带 normalizeXydcAuth 清洗的版本），旧函数可能把 Supabase 的 key 当成西柚 Token 转发，也会得到这个结果——先确认函数已更新并重新 Deploy，再判断是不是 Token 本身的问题。" : "") + (respText ? "原始返回：" + snippetOf(respText) : ""));
+        throw new McpError("auth", "【西柚返回的 " + resp.status + " · mcp token credential not found 同类】请求已经过了中转、到了西柚，是西柚不认这一串。本次实际发送的已是清洗后的版本——" + tokenFingerprint(token) + "，发送头为 Authorization: Bearer + 该本体（走中转双头时经 X-Xydc-Authorization 传给函数、函数再清洗一次后转发）。页面已自动去掉首尾空格、换行和多余的 Bearer，所以这次不是复制多空格造成的：请拿这个指纹和 platform.xydc.com 凭证管理里最新 MCP Token 对长度——长度对不上就是粘的不是最新那一个，或登录的不是同一个西柚账号；长度和首尾都对得上仍报这个错，再去凭证管理新建一个 Token 立刻粘贴测试。" + (useDual ? "另：你现在用的是双头发送，如果 Supabase 函数还没换成本页下方最新版（带 normalizeXydcAuth 清洗 + new Response(res.body) 流式透传），旧函数可能把 Supabase 的 key 当成西柚 Token 转发，也会得到这个结果——先确认函数已更新并重新 Deploy（搜不到 await res.text() 才算新版），再判断是不是 Token 本身的问题。" : "") + (respText ? "原始返回：" + snippetOf(respText) : ""));
       }
-      if (resp.status === 429)
+      if (resp.status === 429){
+        clearTimeout(timer);
+        try { if (resp.body) resp.body.cancel(); } catch(e){}
         throw new McpError("quota", "接口返回 429：Credit 额度或调用频率已达上限，等额度重置后再试。");
-      if (isNotification){ if (resp.status === 202 || resp.ok) return null; throw new McpError("proto", "MCP 初始化通知未被接受（HTTP " + resp.status + "）。"); }
-      if (!resp.ok) throw new McpError("http", "接口返回 HTTP " + resp.status + "，本次调用失败，没有拿到数据。" + (respText ? "原始返回：" + snippetOf(respText) : ""));
-      var text = respText || await resp.text();
-      var msg = parseMcpBody(text, resp.headers.get("Content-Type") || "", id);
-      if (!msg) throw new McpError("proto", "西柚接口返回的内容无法解析（不是预期的 MCP 响应）。");
+      }
+      if (isNotification){
+        clearTimeout(timer);
+        // 通知不需要响应体：立刻取消流，不要等它关闭（SSE 流可能一直开着）
+        try { if (resp.body) resp.body.cancel(); } catch(e){}
+        if (resp.status === 202 || resp.ok) return null;
+        throw new McpError("proto", "MCP 初始化通知未被接受（HTTP " + resp.status + "）。");
+      }
+      if (!resp.ok){
+        clearTimeout(timer);
+        if (!respText){ try { respText = await readErrorText(resp); } catch(e){ respText = ""; } }
+        throw new McpError("http", "接口返回 HTTP " + resp.status + "，本次调用失败，没有拿到数据。" + (respText ? "原始返回：" + snippetOf(respText) : ""));
+      }
+      // 成功响应：流式读取，逐条解析 SSE 的 data: 行，拿到 id 对应的那条就结束
+      var msg;
+      try {
+        msg = await readMcpStream(resp, id);
+      } catch(e) {
+        clearTimeout(timer);
+        if (e && e.name === "AbortError") throw new McpError("timeout", "请求超时（" + Math.round(limit/1000) + " 秒）：已经连上通道「" + (session.routeLabel || "直连") + "」，但在规定时间内没有等到带对应 id 的那条返回。如果走的是 Supabase 中转，多半是中转函数还是旧版——旧版用 await res.text() 等整个 SSE 流关闭，会一直卡住。请把函数换成本页下方最新版（搜得到 new Response(res.body 才算新版）并点 Deploy updates，再重试。");
+        throw new McpError("proto", "读取西柚返回的流失败：" + (e && e.message ? e.message : e));
+      }
+      clearTimeout(timer);
+      if (!msg) throw new McpError("proto", "西柚接口的流已经结束，但里面没有找到带对应 id 的那条 MCP 响应，本次没有拿到数据。如果走的是 Supabase 中转，请确认函数是流式透传版（new Response(res.body)），旧版 await res.text() 会把流卡死或截断。");
       if (msg.error) throw new McpError("rpc", "西柚接口报错：" + ((msg.error && msg.error.message) || "未知错误"));
       return msg.result;
     }
